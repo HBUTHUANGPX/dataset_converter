@@ -66,12 +66,21 @@ uv pip install -e ".[soma]"
 
 `torch` CUDA wheels are platform-specific. If your machine needs a custom PyTorch index, install the matching `torch` build first, then install `.[soma]`.
 
+Nymeria head-mounted video export needs Project Aria VRS decoding plus an MP4 writer:
+
+```bash
+uv pip install -e ".[video]"
+```
+
+If a system `ffmpeg` executable is available, MP4 export uses ffmpeg automatically. If not, it falls back to OpenCV `mp4v`.
+
 ## Code Entrypoints
 
 - CLI: `dataset_converter.hdf5.cli.batch_export:main`
 - CLI: `dataset_converter.nymeria.cli.batch_export:main`
 - HDF5 batch API: `dataset_converter.hdf5.batch`
 - Nymeria batch API: `dataset_converter.nymeria.batch`
+- Nymeria head video export: `dataset_converter.nymeria.video`
 - Shared SOMA BVH/runtime code: `dataset_converter.soma`
 - Vendored SOMA runtime package: top-level `soma`
 
@@ -115,7 +124,10 @@ Nymeria:
 ```text
 nymeria_parse/test_data/
 └── <sequence_id>/
-    └── body_xdata_mvnx
+    ├── body_xdata_mvnx
+    └── recording_head/
+        └── data/
+            └── data.vrs
 ```
 
 Default outputs are written under:
@@ -149,6 +161,27 @@ dataset-converter-nymeria-batch \
   --exports annotation smpl \
   --workers 4 \
   --skip-existing
+```
+
+Batch Nymeria head-mounted stereo video export:
+
+```bash
+dataset-converter-nymeria-batch \
+  --test-data-root nymeria_parse/test_data \
+  --output-root nymeria_parse/out/batch \
+  --exports head-video \
+  --workers 2 \
+  --skip-existing
+```
+
+This writes `head_video/slam_left.mp4`, `head_video/slam_right.mp4`, and `head_video/timestamps.npz` for each sequence. The `.npz` sidecar keeps the original VRS capture timestamps because MP4 timestamps are not precise enough for motion alignment.
+
+The two SLAM streams are stereo but grayscale. To export the color head camera instead, use:
+
+```bash
+dataset-converter-nymeria-batch \
+  --exports head-video \
+  --video-streams rgb
 ```
 
 Batch SOMA BVH export is intentionally sequential because it uses CUDA:

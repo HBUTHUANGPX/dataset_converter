@@ -47,6 +47,7 @@ src/soma/
 Dependency profiles:
 
 - Base install: `h5py`, `numpy`, `scipy`, `tqdm`.
+- `video` extra: Nymeria Project Aria VRS decoding through `projectaria-tools`, plus OpenCV as the MP4 fallback writer. Runtime export prefers system `ffmpeg` when it is available.
 - `soma` extra: GPU/SOMA runtime dependencies such as `torch`, `smplx`, `trimesh`, and `warp-lang`.
 - `gpu` extra: alias for `soma`.
 - `dev` extra: tests plus SOMA dependencies.
@@ -110,6 +111,7 @@ Current stage ownership:
 - `annotation`: native `dataset_converter.nymeria.annotation`.
 - `smpl`: native `dataset_converter.nymeria.smpl`.
 - `soma-bvh`: native `dataset_converter.nymeria.soma_bvh`, using shared `dataset_converter.soma` modules.
+- `head-video`: native `dataset_converter.nymeria.video`, reading `recording_head/data/data.vrs` and exporting selected head-camera streams plus a timestamp sidecar. The default SLAM left/right streams are stereo grayscale; `rgb` exports the color camera.
 
 ## Migration Plan
 

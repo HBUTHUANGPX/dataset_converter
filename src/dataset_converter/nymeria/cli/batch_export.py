@@ -15,12 +15,14 @@ from dataset_converter.nymeria.batch import (
     DEFAULT_SOMA_BATCH_SIZE,
     discover_nymeria_sequence_tasks,
     export_batch_annotation,
+    export_batch_head_video,
     export_batch_smpl,
     export_batch_soma_bvh,
 )
+from dataset_converter.nymeria.video import HEAD_VIDEO_STREAMS
 
 
-EXPORT_CHOICES = ("annotation", "smpl", "soma-bvh")
+EXPORT_CHOICES = ("annotation", "smpl", "soma-bvh", "head-video")
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -38,6 +40,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--batch-size", type=int, default=DEFAULT_SOMA_BATCH_SIZE)
     parser.add_argument("--soma-assets-root", type=Path, default=None, help="Optional. Falls back to SOMA_ASSETS_ROOT or package assets.")
     parser.add_argument("--smpl-model-path", type=Path, default=None, help="Optional. Falls back to SMPL_MODEL_PATH or SOMA assets.")
+    parser.add_argument("--video-fps", type=float, default=None, help="Optional fixed FPS for head-video MP4 files. Defaults to VRS timestamps.")
+    parser.add_argument("--video-max-frames", type=int, default=None, help="Optional max frames per exported head-video stream.")
+    parser.add_argument("--video-rotate-degrees", type=int, choices=(0, 90, 180, 270), default=0)
+    parser.add_argument(
+        "--video-streams",
+        nargs="+",
+        choices=tuple(HEAD_VIDEO_STREAMS),
+        default=["slam-left", "slam-right"],
+        help="Head-video streams to export. SLAM streams are stereo grayscale; rgb is the color camera.",
+    )
     parser.add_argument("--skip-existing", action="store_true")
     parser.add_argument("--summary-path", type=Path, default=None)
     parser.add_argument("--fail-fast", action="store_true")
@@ -102,6 +114,24 @@ def main(argv: list[str] | None = None) -> int:
         )
         print_stage("soma-bvh", results)
         summary_rows.extend(result_to_json("soma-bvh", result) for result in results)
+        if any(not result.ok for result in results):
+            exit_code = 1
+
+    if "head-video" in args.exports:
+        results = export_batch_head_video(
+            tasks,
+            workers=args.workers,
+            skip_existing=args.skip_existing,
+            start_frame=args.start_frame,
+            end_frame=args.end_frame,
+            stride=args.stride,
+            max_frames=args.video_max_frames,
+            fps=args.video_fps,
+            rotate_degrees=args.video_rotate_degrees,
+            streams=tuple(args.video_streams),
+        )
+        print_stage("head-video", results)
+        summary_rows.extend(result_to_json("head-video", result) for result in results)
         if any(not result.ok for result in results):
             exit_code = 1
 

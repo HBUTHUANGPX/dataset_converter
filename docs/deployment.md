@@ -41,6 +41,14 @@ uv pip install -e ".[soma]"
 
 The `soma` extra includes `torch`, `smplx`, `trimesh`, and `warp-lang`. Because CUDA-enabled PyTorch wheels are platform-specific, install the matching `torch` build first if your host needs a custom PyTorch index.
 
+Nymeria VRS-to-MP4 export dependencies are also optional:
+
+```bash
+uv pip install -e ".[video]"
+```
+
+The `video` extra includes `projectaria-tools` for reading Aria VRS files and `opencv-python` for the MP4 fallback writer. If a system `ffmpeg` command is available, video export uses ffmpeg automatically because it is faster in our RGB benchmark.
+
 ## Configure External Assets
 
 Do not edit source files to change local paths. Use environment variables or CLI arguments.
@@ -99,6 +107,14 @@ Install or expose the `soma` Python package in the active environment. The conve
 `SMPL model was not found`
 
 Set `SMPL_MODEL_PATH` or pass `--smpl-model-path`.
+
+`Nymeria head-video export requires projectaria-tools`
+
+Install the video extra with `uv pip install -e ".[video]"`.
+
+`No head VRS file found`
+
+Download the Nymeria `recording_head` or `recording_head_data_data_vrs` data group. The converter expects `recording_head/data/data.vrs` by default.
 
 CUDA out of memory during SOMA export
 

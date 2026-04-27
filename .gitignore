@@ -2,3 +2,4 @@
 **/*.egg-info/
 test_data/*
 output/*
+test_out/*

@@ -29,6 +29,7 @@ src/dataset_converter/nymeria/batch.py
 src/dataset_converter/nymeria/mvnx.py
 src/dataset_converter/nymeria/smpl.py
 src/dataset_converter/nymeria/soma_bvh.py
+src/dataset_converter/nymeria/video.py
 src/dataset_converter/nymeria/xsens_smpl.py
 src/dataset_converter/nymeria/cli/__init__.py
 src/dataset_converter/nymeria/cli/batch_export.py

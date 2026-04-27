@@ -11,6 +11,7 @@ from dataset_converter.common.paths import default_nymeria_output_root, default_
 from dataset_converter.nymeria.annotation import build_annotation_payload, save_annotation_payload
 from dataset_converter.nymeria.smpl import build_smpl_motion_payload, save_smpl_motion_npz
 from dataset_converter.nymeria.soma_bvh import export_nymeria_to_soma_bvh
+from dataset_converter.nymeria.video import HEAD_VIDEO_STREAMS, export_head_videos
 
 
 DEFAULT_SOMA_BATCH_SIZE = 256
@@ -109,6 +110,39 @@ def _export_soma_bvh_task(
         return BatchExportResult(task.task_id, False, error=repr(exc))
 
 
+def _export_head_video_task(
+    task: NymeriaSequenceTask,
+    *,
+    skip_existing: bool,
+    start_frame: int = 0,
+    end_frame: int = -1,
+    stride: int = 1,
+    max_frames: int | None = None,
+    fps: float | None = None,
+    rotate_degrees: int = 0,
+    streams: tuple[str, ...] = ("slam-left", "slam-right"),
+) -> BatchExportResult:
+    output_dir = task.output_dir / "head_video"
+    expected_outputs = tuple(output_dir / f"{HEAD_VIDEO_STREAMS[name]['output_stem']}.mp4" for name in streams) + (output_dir / "timestamps.npz",)
+    if skip_existing and all(path.is_file() for path in expected_outputs):
+        return BatchExportResult(task.task_id, True, expected_outputs)
+    try:
+        output = export_head_videos(
+            task.sequence_dir,
+            output_dir=output_dir,
+            start_frame=start_frame,
+            end_frame=end_frame,
+            stride=stride,
+            max_frames=max_frames,
+            fps=fps,
+            rotate_degrees=rotate_degrees,
+            streams=streams,
+        )
+        return BatchExportResult(task.task_id, True, (*output.video_paths, output.timestamps_path))
+    except Exception as exc:  # pragma: no cover
+        return BatchExportResult(task.task_id, False, error=repr(exc))
+
+
 def export_batch_annotation(
     tasks: Iterable[NymeriaSequenceTask],
     *,
@@ -161,3 +195,31 @@ def export_batch_soma_bvh(
         skip_existing=skip_existing,
     )
     return run_sequential_tasks(tasks, worker=worker, desc="Nymeria SOMA BVH")
+
+
+def export_batch_head_video(
+    tasks: Iterable[NymeriaSequenceTask],
+    *,
+    workers: int = 1,
+    skip_existing: bool = False,
+    start_frame: int = 0,
+    end_frame: int = -1,
+    stride: int = 1,
+    max_frames: int | None = None,
+    fps: float | None = None,
+    rotate_degrees: int = 0,
+    streams: tuple[str, ...] = ("slam-left", "slam-right"),
+    executor_cls=ProcessPoolExecutor,
+) -> list[BatchExportResult]:
+    worker = partial(
+        _export_head_video_task,
+        skip_existing=skip_existing,
+        start_frame=start_frame,
+        end_frame=end_frame,
+        stride=stride,
+        max_frames=max_frames,
+        fps=fps,
+        rotate_degrees=rotate_degrees,
+        streams=streams,
+    )
+    return run_multiprocess_tasks(tasks, worker=worker, workers=workers, desc="Nymeria head video", executor_cls=executor_cls)

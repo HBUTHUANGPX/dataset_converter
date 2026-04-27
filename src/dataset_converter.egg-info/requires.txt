@@ -21,3 +21,7 @@ smplx
 torch
 trimesh
 warp-lang
+
+[video]
+opencv-python
+projectaria-tools

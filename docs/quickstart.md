@@ -119,7 +119,62 @@ dataset-converter-nymeria-batch \
 
 If your GPU runs out of memory, lower `--batch-size`, for example `64` or `32`.
 
-## 5. Check Output
+## 5. Export Nymeria Head Video
+
+Nymeria head-mounted video lives in Project Aria VRS files. Install the optional video dependencies:
+
+```bash
+cd dataset_converter
+uv pip install -e ".[video]"
+cd ..
+```
+
+The exporter automatically uses system `ffmpeg` when available, and falls back to OpenCV `mp4v` when it is not.
+
+Then export the two SLAM camera streams:
+
+```bash
+dataset-converter-nymeria-batch \
+  --test-data-root nymeria_parse/test_data \
+  --output-root nymeria_parse/out/batch \
+  --exports head-video \
+  --workers 2 \
+  --skip-existing
+```
+
+Each sequence writes:
+
+```text
+<output-root>/<sequence_id>/head_video/
+├── slam_left.mp4
+├── slam_right.mp4
+└── timestamps.npz
+```
+
+The timestamp sidecar stores original VRS capture timestamps and frame indices for each stream. Use it for precise alignment with MVNX/body frames.
+
+The SLAM left/right streams are stereo grayscale cameras. If you need color video, export the RGB stream:
+
+```bash
+dataset-converter-nymeria-batch \
+  --test-data-root nymeria_parse/test_data \
+  --output-root nymeria_parse/out/batch \
+  --exports head-video \
+  --video-streams rgb \
+  --skip-existing
+```
+
+Useful options:
+
+```bash
+--video-streams slam-left slam-right rgb
+--video-fps 30
+--video-max-frames 300
+--video-rotate-degrees 90
+--stride 2
+```
+
+## 6. Check Output
 
 Each summary line is JSON:
 
