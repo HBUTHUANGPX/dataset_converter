@@ -1,0 +1,9 @@
+Metadata-Version: 2.4
+Name: dataset-converter
+Version: 0.1.0
+Summary: Dataset conversion utilities for HDF5/Xperience and Nymeria motion data.
+Requires-Python: >=3.10
+Requires-Dist: h5py
+Requires-Dist: numpy
+Requires-Dist: scipy
+Requires-Dist: tqdm
