@@ -31,4 +31,10 @@ This keeps the source package small while removing the dependency on the externa
 
 ## Future Environment Work
 
-The package is now structured so a future `uv` environment can declare the SOMA runtime dependencies explicitly. That environment is not created yet.
+The package now exposes SOMA/GPU dependencies through `setup.cfg`:
+
+```bash
+uv pip install -e ".[soma]"
+```
+
+If your machine needs a specific CUDA PyTorch wheel, install that `torch` build first and then install the `soma` extra.

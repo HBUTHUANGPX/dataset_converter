@@ -6,6 +6,10 @@
 
 ```text
 dataset_converter/
+├── pyproject.toml
+├── setup.cfg
+├── requirements.txt
+├── docs/
 ├── common/
 │   ├── batch.py
 │   ├── cli.py
@@ -32,7 +36,22 @@ dataset_converter/
     ├── bvh.py
     ├── inversion.py
     └── transforms.py
+src/soma/
+└── vendored SOMA Python runtime imported as top-level `soma`
 ```
+
+## Packaging
+
+`pyproject.toml` only declares the PEP 517 build backend. Package metadata, Python version, dependencies, entry points, and extras live in `setup.cfg`.
+
+Dependency profiles:
+
+- Base install: `h5py`, `numpy`, `scipy`, `tqdm`.
+- `soma` extra: GPU/SOMA runtime dependencies such as `torch`, `smplx`, `trimesh`, and `warp-lang`.
+- `gpu` extra: alias for `soma`.
+- `dev` extra: tests plus SOMA dependencies.
+
+Python 3.11 is the recommended and declared minimum runtime.
 
 ## Shared Semantics
 

@@ -4,11 +4,19 @@ This guide assumes `dataset_converter/` lives inside the larger `mimic_baseline`
 
 ## 1. Install The Package
 
+Recommended Python version: 3.11.
+
+Using `uv`:
+
 ```bash
 cd dataset_converter
-pip install -e .
+uv venv --python 3.11
+source .venv/bin/activate
+uv pip install -e .
 cd ..
 ```
+
+If you are staying in the existing `mimic_baseline` conda environment, `pip install -e dataset_converter` is also fine.
 
 After installation, these commands should work:
 
@@ -71,6 +79,16 @@ dataset-converter-nymeria-batch \
 ## 4. Export SOMA BVH
 
 SOMA BVH export uses CUDA and requires the SOMA Python runtime to be importable in the active environment. It is intentionally sequential even in batch mode.
+
+Install SOMA/GPU dependencies when needed:
+
+```bash
+cd dataset_converter
+uv pip install -e ".[soma]"
+cd ..
+```
+
+If your PyTorch CUDA wheel needs a custom index, install the matching `torch` build first, then install `.[soma]`.
 
 Set paths once:
 

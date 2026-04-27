@@ -1,5 +1,6 @@
 README.md
 pyproject.toml
+setup.cfg
 src/dataset_converter/__init__.py
 src/dataset_converter.egg-info/PKG-INFO
 src/dataset_converter.egg-info/SOURCES.txt

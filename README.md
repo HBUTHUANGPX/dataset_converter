@@ -11,10 +11,20 @@ The old `hdf5_parse/` and `nymeria_parse/` folders are still kept for compatibil
 
 ## Install
 
-From this package directory:
+Recommended Python version: 3.11.
+
+Using `uv` from the package directory:
 
 ```bash
 cd dataset_converter
+uv venv --python 3.11
+source .venv/bin/activate
+uv pip install -e .
+```
+
+If you are using the existing `mimic_baseline` conda environment:
+
+```bash
 pip install -e .
 ```
 
@@ -39,6 +49,32 @@ python -m dataset_converter.hdf5.cli.batch_export --help
 python -m dataset_converter.nymeria.cli.batch_export --help
 ```
 
+## Dependency Groups
+
+Base install is CPU/IO friendly and supports `annotation` plus `smpl` export:
+
+```bash
+uv pip install -r requirements.txt
+uv pip install -e .
+```
+
+SOMA BVH export needs GPU-oriented dependencies:
+
+```bash
+uv pip install -e ".[soma]"
+```
+
+`torch` CUDA wheels are platform-specific. If your machine needs a custom PyTorch index, install the matching `torch` build first, then install `.[soma]`.
+
+## Code Entrypoints
+
+- CLI: `dataset_converter.hdf5.cli.batch_export:main`
+- CLI: `dataset_converter.nymeria.cli.batch_export:main`
+- HDF5 batch API: `dataset_converter.hdf5.batch`
+- Nymeria batch API: `dataset_converter.nymeria.batch`
+- Shared SOMA BVH/runtime code: `dataset_converter.soma`
+- Vendored SOMA runtime package: top-level `soma`
+
 ## External Assets
 
 The package does not hard-code machine-specific paths. For SOMA/SMPL export, provide paths with CLI arguments or environment variables:
@@ -59,7 +95,7 @@ Equivalent CLI arguments:
 
 ## Environment Direction
 
-The package is structured so it can later own an independent `uv` environment. That work has not started yet. For now, use the existing `mimic_baseline` environment and install this package editable with `pip install -e dataset_converter`.
+The package now has `setup.cfg`, `requirements.txt`, and a Python 3.11 recommendation so it can be installed in an independent `uv` environment. Keep using the existing `mimic_baseline` environment when you need to reuse already-installed CUDA/PyTorch wheels.
 
 The SOMA Python runtime is vendored in `dataset_converter/src/soma`, so `import soma` comes from this package after installation. Large SOMA assets are still explicit runtime inputs through `SOMA_ASSETS_ROOT`.
 

@@ -4,12 +4,42 @@ This page is for setting up the converter on a new machine.
 
 ## Install Editable Package
 
+Recommended Python version: 3.11.
+
+Standalone `uv` environment:
+
+```bash
+cd /path/to/mimic_baseline/dataset_converter
+uv venv --python 3.11
+source .venv/bin/activate
+uv pip install -e .
+```
+
+Existing conda environment:
+
 ```bash
 cd /path/to/mimic_baseline/dataset_converter
 pip install -e .
 ```
 
 The editable install makes `dataset_converter` importable and installs the package CLI entry points. Run commands from the `mimic_baseline` workspace root, or pass explicit `--test-data-root` and `--output-root` paths.
+
+## Dependency Profiles
+
+Base CPU/IO dependencies are listed in `requirements.txt` and installed by the package:
+
+```bash
+uv pip install -r requirements.txt
+uv pip install -e .
+```
+
+SOMA/GPU export dependencies are optional:
+
+```bash
+uv pip install -e ".[soma]"
+```
+
+The `soma` extra includes `torch`, `smplx`, `trimesh`, and `warp-lang`. Because CUDA-enabled PyTorch wheels are platform-specific, install the matching `torch` build first if your host needs a custom PyTorch index.
 
 ## Configure External Assets
 
@@ -25,7 +55,7 @@ export SMPLH_MODEL_PATH=/path/to/SMPLH_NEUTRAL.pkl
 
 Only `SOMA_ASSETS_ROOT` and `SMPL_MODEL_PATH` are needed for `soma-bvh` export. Basic annotation and SMPL extraction do not need SOMA assets.
 
-The package is being prepared for a future standalone `uv` environment, but that environment is not created yet. Keep using the current `mimic_baseline` environment until the dependency set is frozen.
+The package can now be installed with `uv`; keep using the current `mimic_baseline` environment when you need to reuse already-installed CUDA/PyTorch wheels.
 
 The SOMA Python runtime is included in this package under `dataset_converter/src/soma`. After editable install, this should work without adding an external source tree to `PYTHONPATH`:
 
