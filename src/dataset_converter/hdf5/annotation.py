@@ -13,6 +13,7 @@ from dataset_converter.hdf5.io import load_body_frame_selection
 
 
 FRAME_NAME_PATTERN = re.compile(r"^frame[_-](\d+)$")
+INTEGER_STRING_PATTERN = re.compile(r"^[+-]?\d+$")
 
 
 def load_caption_json(hdf5_path: str | Path) -> dict[str, Any]:
@@ -33,6 +34,21 @@ def _parse_caption_boundary(value: Any) -> tuple[str, int]:
     return "timestamp", int(value)
 
 
+def _parse_caption_range_boundaries(start_value: Any, end_value: Any) -> tuple[str, int, int]:
+    start_kind, start = _parse_caption_boundary(start_value)
+    end_kind, end = _parse_caption_boundary(end_value)
+    if start_kind == end_kind:
+        return start_kind, start, end
+
+    start_is_numeric_string = isinstance(start_value, str) and INTEGER_STRING_PATTERN.match(start_value.strip()) is not None
+    end_is_numeric_string = isinstance(end_value, str) and INTEGER_STRING_PATTERN.match(end_value.strip()) is not None
+    if start_kind == "timestamp" and end_kind == "frame" and start_is_numeric_string:
+        return "frame", start, end
+    if start_kind == "frame" and end_kind == "timestamp" and end_is_numeric_string:
+        return "frame", start, end
+    raise ValueError(f"Caption range mixes {start_kind!r} start with {end_kind!r} end.")
+
+
 def _caption_range_mask(
     *,
     start_value: Any,
@@ -40,11 +56,8 @@ def _caption_range_mask(
     frame_timestamps: np.ndarray,
     frame_nums: np.ndarray | None,
 ) -> np.ndarray:
-    start_kind, start = _parse_caption_boundary(start_value)
-    end_kind, end = _parse_caption_boundary(end_value)
-    if start_kind != end_kind:
-        raise ValueError(f"Caption range mixes {start_kind!r} start with {end_kind!r} end.")
-    if start_kind == "frame":
+    range_kind, start, end = _parse_caption_range_boundaries(start_value, end_value)
+    if range_kind == "frame":
         if frame_nums is None:
             raise ValueError("Caption uses frame_XXXX ranges, but frame_nums were not provided.")
         return (frame_nums >= start) & (frame_nums <= end)
