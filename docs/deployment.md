@@ -58,7 +58,6 @@ Recommended environment variables:
 ```bash
 export SOMA_ASSETS_ROOT=/path/to/soma/assets
 export SMPL_MODEL_PATH=/path/to/soma/assets/SMPL/SMPL_NEUTRAL.npz
-export SMPLH_MODEL_PATH=/path/to/SMPLH_NEUTRAL.pkl
 ```
 
 Only `SOMA_ASSETS_ROOT` and `SMPL_MODEL_PATH` are needed for `soma-bvh` export. Basic annotation and SMPL extraction do not need SOMA assets.

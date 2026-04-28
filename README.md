@@ -198,6 +198,7 @@ dataset-converter-hdf5-batch \
 ## More Docs
 
 - [Quickstart](docs/quickstart.md)
+- [CLI Reference](docs/cli.md)
 - [Deployment](docs/deployment.md)
 - [Architecture](docs/architecture.md)
 - [Vendored SOMA Runtime](docs/vendored_soma.md)

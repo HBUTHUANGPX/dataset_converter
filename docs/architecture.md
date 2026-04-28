@@ -30,6 +30,7 @@ dataset_converter/
     ├── mvnx.py
     ├── soma_bvh.py
     ├── smpl.py
+    ├── video.py
     ├── xsens_smpl.py
     └── cli/
 └── soma/

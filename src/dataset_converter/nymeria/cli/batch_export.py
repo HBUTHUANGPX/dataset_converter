@@ -27,32 +27,38 @@ EXPORT_CHOICES = ("annotation", "smpl", "soma-bvh", "head-video")
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Batch export Nymeria motion assets. SMPL/annotation may use multiprocessing; SOMA BVH is sequential."
+        description="Batch export Nymeria motion assets. SMPL/annotation/head-video may use multiprocessing; SOMA BVH is sequential.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--test-data-root", type=Path, default=default_nymeria_test_data_root())
-    parser.add_argument("--output-root", type=Path, default=default_nymeria_output_root())
-    parser.add_argument("--exports", nargs="+", choices=EXPORT_CHOICES, default=["annotation", "smpl"])
-    parser.add_argument("--workers", type=int, default=1)
-    parser.add_argument("--start-frame", type=int, default=0)
-    parser.add_argument("--end-frame", type=int, default=-1)
-    parser.add_argument("--stride", type=int, default=1)
-    parser.add_argument("--device", default="cuda")
-    parser.add_argument("--batch-size", type=int, default=DEFAULT_SOMA_BATCH_SIZE)
-    parser.add_argument("--soma-assets-root", type=Path, default=None, help="Optional. Falls back to SOMA_ASSETS_ROOT or package assets.")
-    parser.add_argument("--smpl-model-path", type=Path, default=None, help="Optional. Falls back to SMPL_MODEL_PATH or SOMA assets.")
-    parser.add_argument("--video-fps", type=float, default=None, help="Optional fixed FPS for head-video MP4 files. Defaults to VRS timestamps.")
-    parser.add_argument("--video-max-frames", type=int, default=None, help="Optional max frames per exported head-video stream.")
-    parser.add_argument("--video-rotate-degrees", type=int, choices=(0, 90, 180, 270), default=0)
-    parser.add_argument(
+    common = parser.add_argument_group("Common options")
+    common.add_argument("--test-data-root", type=Path, default=default_nymeria_test_data_root(), help="Root containing <sequence>/body_xdata_mvnx files.")
+    common.add_argument("--output-root", type=Path, default=default_nymeria_output_root(), help="Root directory for exported files.")
+    common.add_argument("--exports", nargs="+", choices=EXPORT_CHOICES, default=["annotation", "smpl"], help="Export stages to run.")
+    common.add_argument("--workers", type=int, default=1, help="Multiprocessing worker count for annotation, SMPL, and head-video stages. SOMA BVH stays sequential.")
+    common.add_argument("--start-frame", type=int, default=0, help="Start frame index for MVNX/head-video exports.")
+    common.add_argument("--end-frame", type=int, default=-1, help="Exclusive end frame index; -1 means all remaining frames.")
+    common.add_argument("--stride", type=int, default=1, help="Frame stride for exported motion/video timelines.")
+    common.add_argument("--skip-existing", action="store_true", help="Skip a stage output when the expected output file(s) already exist.")
+    common.add_argument("--summary-path", type=Path, default=None, help="Optional JSONL summary path with one row per task/stage.")
+    common.add_argument("--fail-fast", action="store_true", help="Stop after the first failing stage instead of continuing later stages.")
+
+    soma_group = parser.add_argument_group("SOMA BVH options")
+    soma_group.add_argument("--device", default="cuda", help="Torch device used by the SOMA BVH stage.")
+    soma_group.add_argument("--batch-size", type=int, default=DEFAULT_SOMA_BATCH_SIZE, help="GPU batch size for SOMA inversion.")
+    soma_group.add_argument("--soma-assets-root", type=Path, default=None, help="SOMA assets root. Falls back to SOMA_ASSETS_ROOT or package candidates.")
+    soma_group.add_argument("--smpl-model-path", type=Path, default=None, help="SMPL model path. Falls back to SMPL_MODEL_PATH or SOMA assets.")
+
+    video_group = parser.add_argument_group("Nymeria head-video options")
+    video_group.add_argument("--video-fps", type=float, default=None, help="Fixed FPS for head-video MP4 files. None estimates FPS from VRS timestamps.")
+    video_group.add_argument("--video-max-frames", type=int, default=None, help="Maximum frames per exported head-video stream.")
+    video_group.add_argument("--video-rotate-degrees", type=int, choices=(0, 90, 180, 270), default=0, help="Rotate exported video frames clockwise.")
+    video_group.add_argument(
         "--video-streams",
         nargs="+",
         choices=tuple(HEAD_VIDEO_STREAMS),
         default=["slam-left", "slam-right"],
         help="Head-video streams to export. SLAM streams are stereo grayscale; rgb is the color camera.",
     )
-    parser.add_argument("--skip-existing", action="store_true")
-    parser.add_argument("--summary-path", type=Path, default=None)
-    parser.add_argument("--fail-fast", action="store_true")
     return parser
 
 

@@ -24,24 +24,30 @@ EXPORT_CHOICES = ("annotation", "smpl", "soma-bvh")
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Batch export HDF5/Xperience motion assets. SMPL/annotation may use multiprocessing; SOMA BVH is sequential."
+        description="Batch export HDF5/Xperience motion assets. SMPL/annotation may use multiprocessing; SOMA BVH is sequential.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--test-data-root", type=Path, default=default_hdf5_test_data_root())
-    parser.add_argument("--output-root", type=Path, default=default_hdf5_output_root())
-    parser.add_argument("--exports", nargs="+", choices=EXPORT_CHOICES, default=["annotation", "smpl"])
-    parser.add_argument("--workers", type=int, default=1)
-    parser.add_argument("--start-frame", type=int, default=0)
-    parser.add_argument("--end-frame", type=int, default=-1)
-    parser.add_argument("--stride", type=int, default=1)
-    parser.add_argument("--filename-prefix", default="annotation")
-    parser.add_argument("--smpl-frame", choices=("soma_y_up", "raw"), default="soma_y_up")
-    parser.add_argument("--device", default="cuda")
-    parser.add_argument("--batch-size", type=int, default=None)
-    parser.add_argument("--soma-assets-root", type=Path, default=None, help="Optional. Falls back to SOMA_ASSETS_ROOT or package assets.")
-    parser.add_argument("--smpl-model-path", type=Path, default=None, help="Optional. Falls back to SMPL_MODEL_PATH or SOMA assets.")
-    parser.add_argument("--skip-existing", action="store_true")
-    parser.add_argument("--summary-path", type=Path, default=None)
-    parser.add_argument("--fail-fast", action="store_true")
+    common = parser.add_argument_group("Common options")
+    common.add_argument("--test-data-root", type=Path, default=default_hdf5_test_data_root(), help="Root containing <subset>/<episode>/annotation.hdf5 files.")
+    common.add_argument("--output-root", type=Path, default=default_hdf5_output_root(), help="Root directory for exported files.")
+    common.add_argument("--exports", nargs="+", choices=EXPORT_CHOICES, default=["annotation", "smpl"], help="Export stages to run.")
+    common.add_argument("--workers", type=int, default=1, help="Multiprocessing worker count for annotation and SMPL stages. SOMA BVH stays sequential.")
+    common.add_argument("--start-frame", type=int, default=0, help="Start index within full_body_mocap arrays.")
+    common.add_argument("--end-frame", type=int, default=-1, help="Exclusive end index within full_body_mocap arrays; -1 means all remaining frames.")
+    common.add_argument("--stride", type=int, default=1, help="Frame stride for exported motion/video timelines.")
+    common.add_argument("--skip-existing", action="store_true", help="Skip a stage output when the expected output file(s) already exist.")
+    common.add_argument("--summary-path", type=Path, default=None, help="Optional JSONL summary path with one row per task/stage.")
+    common.add_argument("--fail-fast", action="store_true", help="Stop after the first failing stage instead of continuing later stages.")
+
+    smpl_group = parser.add_argument_group("HDF5 SMPL options")
+    smpl_group.add_argument("--filename-prefix", default="annotation", help="Prefix for segmented SMPL and SOMA BVH output filenames.")
+    smpl_group.add_argument("--smpl-frame", choices=("soma_y_up", "raw"), default="soma_y_up", help="Coordinate frame for exported SMPL npz files.")
+
+    soma_group = parser.add_argument_group("SOMA BVH options")
+    soma_group.add_argument("--device", default="cuda", help="Torch device used by the SOMA BVH stage.")
+    soma_group.add_argument("--batch-size", type=int, default=None, help="GPU batch size for SOMA inversion; None lets the backend choose.")
+    soma_group.add_argument("--soma-assets-root", type=Path, default=None, help="SOMA assets root. Falls back to SOMA_ASSETS_ROOT or package candidates.")
+    soma_group.add_argument("--smpl-model-path", type=Path, default=None, help="SMPL model path. Falls back to SMPL_MODEL_PATH or SOMA assets.")
     return parser
 
 

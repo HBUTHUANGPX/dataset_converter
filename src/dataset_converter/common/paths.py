@@ -110,7 +110,3 @@ def resolve_smpl_model_path(explicit: str | Path | None = None) -> Path | None:
             ]
         )
     return resolve_optional_path(explicit=explicit, env_var="SMPL_MODEL_PATH", candidates=candidates)
-
-
-def resolve_smplh_model_path(explicit: str | Path | None = None) -> Path | None:
-    return resolve_optional_path(explicit=explicit, env_var="SMPLH_MODEL_PATH", candidates=())
