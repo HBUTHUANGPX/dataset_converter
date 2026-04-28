@@ -7,6 +7,23 @@ import h5py
 import numpy as np
 
 
+REQUIRED_BODY_SELECTION_PATHS = (
+    "full_body_mocap/frame_nums",
+    "full_body_mocap/Ts_world_root",
+    "full_body_mocap/body_quats",
+    "full_body_mocap/betas",
+    "video/frame_number",
+    "video/device_timestamp",
+)
+
+
+class MissingHDF5ComponentError(KeyError):
+    def __init__(self, hdf5_path: Path, missing_paths: list[str]) -> None:
+        self.hdf5_path = Path(hdf5_path)
+        self.missing_paths = tuple(missing_paths)
+        super().__init__(f"{self.hdf5_path.name} is missing required HDF5 paths: {', '.join(self.missing_paths)}")
+
+
 @dataclass(frozen=True)
 class BodyFrameSelection:
     root_pose7: np.ndarray
@@ -58,6 +75,10 @@ def build_frame_timestamp_lookup(
     return {int(frame_num): int(timestamp) for frame_num, timestamp in zip(frame_numbers, timestamps)}
 
 
+def find_missing_hdf5_paths(h5_file: h5py.File, required_paths: tuple[str, ...] = REQUIRED_BODY_SELECTION_PATHS) -> list[str]:
+    return [path for path in required_paths if path not in h5_file]
+
+
 def load_body_frame_selection(
     hdf5_path: str | Path,
     *,
@@ -67,6 +88,10 @@ def load_body_frame_selection(
 ) -> BodyFrameSelection:
     hdf5_path = Path(hdf5_path)
     with h5py.File(hdf5_path, "r") as h5_file:
+        missing_paths = find_missing_hdf5_paths(h5_file)
+        if missing_paths:
+            raise MissingHDF5ComponentError(hdf5_path, missing_paths)
+
         total_frames = int(h5_file["full_body_mocap/frame_nums"].shape[0])
         stop = total_frames if end_frame in (-1, None) else min(int(end_frame), total_frames)
         frame_slice = slice(int(start_frame), stop, int(stride))
