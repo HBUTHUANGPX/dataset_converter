@@ -59,7 +59,6 @@ uv pip install -e .
 ```
 
 SOMA BVH export needs GPU-oriented dependencies:
-
 ```bash
 uv pip install -e ".[soma]"
 ```

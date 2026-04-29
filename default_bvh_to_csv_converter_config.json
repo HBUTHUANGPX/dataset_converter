@@ -1,6 +1,6 @@
 {
-	"import_folder": "dataset_converter/test_out",
-	"export_folder": "dataset_converter/test_out_export",
+	"import_folder": "dataset_converter/test_out/hdf5_batch",
+	"export_folder": "dataset_converter/test_out_export/hdf5_batch",
 	"batch_size": 100,
 	"output_fps": 50,
 	"include_source_data": false,

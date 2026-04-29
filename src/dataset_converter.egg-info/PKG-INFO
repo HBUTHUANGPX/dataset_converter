@@ -13,20 +13,41 @@ Requires-Dist: opencv-python; extra == "video"
 Requires-Dist: projectaria-tools; extra == "video"
 Provides-Extra: soma
 Requires-Dist: smplx; extra == "soma"
-Requires-Dist: torch; extra == "soma"
-Requires-Dist: trimesh; extra == "soma"
-Requires-Dist: warp-lang; extra == "soma"
+Requires-Dist: newton==1.0.0; extra == "soma"
+Requires-Dist: warp-lang==1.12.0; extra == "soma"
+Requires-Dist: typing_extensions==4.15.0; extra == "soma"
+Requires-Dist: pyglet==2.1.13; extra == "soma"
+Requires-Dist: trimesh==4.11.3; extra == "soma"
+Requires-Dist: imgui-bundle==1.92.4; extra == "soma"
+Requires-Dist: usd-core==26.3; extra == "soma"
+Requires-Dist: chumpy==0.70; extra == "soma"
+Requires-Dist: cholespy==2.2.0; extra == "soma"
+Requires-Dist: rtree==1.4.1; extra == "soma"
 Provides-Extra: gpu
 Requires-Dist: smplx; extra == "gpu"
-Requires-Dist: torch; extra == "gpu"
-Requires-Dist: trimesh; extra == "gpu"
-Requires-Dist: warp-lang; extra == "gpu"
+Requires-Dist: newton==1.0.0; extra == "gpu"
+Requires-Dist: warp-lang==1.12.0; extra == "gpu"
+Requires-Dist: typing_extensions==4.15.0; extra == "gpu"
+Requires-Dist: pyglet==2.1.13; extra == "gpu"
+Requires-Dist: trimesh==4.11.3; extra == "gpu"
+Requires-Dist: imgui-bundle==1.92.4; extra == "gpu"
+Requires-Dist: usd-core==26.3; extra == "gpu"
+Requires-Dist: chumpy==0.70; extra == "gpu"
+Requires-Dist: cholespy==2.2.0; extra == "gpu"
+Requires-Dist: rtree==1.4.1; extra == "gpu"
 Provides-Extra: dev
 Requires-Dist: pytest; extra == "dev"
 Requires-Dist: smplx; extra == "dev"
-Requires-Dist: torch; extra == "dev"
-Requires-Dist: trimesh; extra == "dev"
-Requires-Dist: warp-lang; extra == "dev"
+Requires-Dist: newton==1.0.0; extra == "dev"
+Requires-Dist: warp-lang==1.12.0; extra == "dev"
+Requires-Dist: typing_extensions==4.15.0; extra == "dev"
+Requires-Dist: pyglet==2.1.13; extra == "dev"
+Requires-Dist: trimesh==4.11.3; extra == "dev"
+Requires-Dist: imgui-bundle==1.92.4; extra == "dev"
+Requires-Dist: usd-core==26.3; extra == "dev"
+Requires-Dist: chumpy==0.70; extra == "dev"
+Requires-Dist: cholespy==2.2.0; extra == "dev"
+Requires-Dist: rtree==1.4.1; extra == "dev"
 
 # dataset_converter
 
@@ -89,7 +110,6 @@ uv pip install -e .
 ```
 
 SOMA BVH export needs GPU-oriented dependencies:
-
 ```bash
 uv pip install -e ".[soma]"
 ```
@@ -101,6 +121,8 @@ Nymeria head-mounted video export needs Project Aria VRS decoding plus an MP4 wr
 ```bash
 uv pip install -e ".[video]"
 ```
+
+If a system `ffmpeg` executable is available, MP4 export uses ffmpeg automatically. If not, it falls back to OpenCV `mp4v`.
 
 ## Code Entrypoints
 
@@ -204,6 +226,14 @@ dataset-converter-nymeria-batch \
 
 This writes `head_video/slam_left.mp4`, `head_video/slam_right.mp4`, and `head_video/timestamps.npz` for each sequence. The `.npz` sidecar keeps the original VRS capture timestamps because MP4 timestamps are not precise enough for motion alignment.
 
+The two SLAM streams are stereo but grayscale. To export the color head camera instead, use:
+
+```bash
+dataset-converter-nymeria-batch \
+  --exports head-video \
+  --video-streams rgb
+```
+
 Batch SOMA BVH export is intentionally sequential because it uses CUDA:
 
 ```bash
@@ -218,6 +248,7 @@ dataset-converter-hdf5-batch \
 ## More Docs
 
 - [Quickstart](docs/quickstart.md)
+- [CLI Reference](docs/cli.md)
 - [Deployment](docs/deployment.md)
 - [Architecture](docs/architecture.md)
 - [Vendored SOMA Runtime](docs/vendored_soma.md)

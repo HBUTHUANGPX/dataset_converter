@@ -7,9 +7,9 @@ import numpy as np
 from dataset_converter.common.smpl import SMPLBodyMotion
 from dataset_converter.nymeria.mvnx import load_mvnx_motion
 from dataset_converter.nymeria.smpl import build_smpl_motion_payload
-from dataset_converter.soma.bvh import canonicalize_motion_local_transforms_for_bvh, write_soma_bvh
+from dataset_converter.soma.bvh import prepare_soma_bvh_motion_transforms, write_soma_bvh
 from dataset_converter.soma.inversion import run_soma_inversion
-from dataset_converter.soma.transforms import ensure_local_transforms_pre_visualization_frame, normalize_root_parent_index
+from dataset_converter.soma.transforms import normalize_root_parent_index
 
 
 def smpl_payload_to_motion(
@@ -65,13 +65,11 @@ def export_nymeria_to_soma_bvh(
     joint_names = list(soma_output["joint_names"])
     parent_indices = normalize_root_parent_index(soma_output["parent_indices"])
     reference_local_transforms = np.asarray(soma_output["reference_local_transforms"], dtype=np.float32)
-    local_transforms = canonicalize_motion_local_transforms_for_bvh(
-        local_transforms=ensure_local_transforms_pre_visualization_frame(
-            local_transforms=np.asarray(soma_output["local_transforms"], dtype=np.float32),
-            parent_indices=parent_indices,
-            joint_names=joint_names,
-        ),
+    local_transforms = prepare_soma_bvh_motion_transforms(
+        joint_names=joint_names,
         parent_indices=parent_indices,
+        reference_local_transforms=reference_local_transforms,
+        local_transforms=np.asarray(soma_output["local_transforms"], dtype=np.float32),
     )
     return write_soma_bvh(
         output_path=output_path,

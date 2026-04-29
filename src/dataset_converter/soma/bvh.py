@@ -41,6 +41,80 @@ def canonicalize_motion_local_transforms_for_bvh(
     return local_transforms
 
 
+def prepare_soma_bvh_motion_transforms(
+    *,
+    joint_names: list[str],
+    parent_indices: np.ndarray,
+    reference_local_transforms: np.ndarray,
+    local_transforms: np.ndarray,
+    position_channel_joints: tuple[str, ...] = DEFAULT_POSITION_CHANNEL_JOINTS,
+) -> np.ndarray:
+    """Convert SOMA inversion local transforms into SOMA BVH motion-channel transforms.
+
+    The SOMA BVH loader treats position channels as complete local translations
+    and ignores the hierarchy OFFSET for those joints.  SOMA inversion returns
+    the Hips translation as a dynamic offset relative to the rest local
+    transform, so non-root position-channel joints need their reference
+    translation restored before the virtual Root is folded into them.
+    """
+
+    joint_names = [str(name) for name in joint_names]
+    parent_indices = np.asarray(parent_indices, dtype=np.int32)
+    reference_local_transforms = np.asarray(reference_local_transforms, dtype=np.float32)
+    prepared = np.asarray(local_transforms, dtype=np.float32).copy()
+
+    if reference_local_transforms.shape != (len(joint_names), 7):
+        raise ValueError(
+            f"Expected reference_local_transforms with shape ({len(joint_names)}, 7), got {reference_local_transforms.shape}."
+        )
+    if prepared.ndim != 3 or prepared.shape[-1] != 7:
+        raise ValueError(f"Expected local_transforms with shape (F, J, 7), got {prepared.shape}.")
+    if prepared.shape[1] != len(joint_names):
+        raise ValueError(f"Expected local_transforms second dimension {len(joint_names)}, got {prepared.shape[1]}.")
+    if parent_indices.shape != (len(joint_names),):
+        raise ValueError(f"Expected parent_indices with shape ({len(joint_names)},), got {parent_indices.shape}.")
+
+    root_indices = np.flatnonzero(parent_indices < 0)
+    if root_indices.size != 1:
+        raise ValueError(f"Expected exactly one root joint, got indices {root_indices.tolist()}.")
+    root_idx = int(root_indices[0])
+
+    position_channel_set = set(position_channel_joints)
+    for joint_idx, joint_name in enumerate(joint_names):
+        if joint_idx != root_idx and joint_name in position_channel_set:
+            prepared[:, joint_idx, :3] += reference_local_transforms[joint_idx, :3]
+
+    return _collapse_virtual_root_for_soma_bvh(
+        local_transforms=prepared,
+        parent_indices=parent_indices,
+        root_idx=root_idx,
+    )
+
+
+def _collapse_virtual_root_for_soma_bvh(
+    *,
+    local_transforms: np.ndarray,
+    parent_indices: np.ndarray,
+    root_idx: int,
+) -> np.ndarray:
+    collapsed = np.asarray(local_transforms, dtype=np.float32).copy()
+    children = np.flatnonzero(parent_indices == root_idx)
+    if children.size == 0:
+        return collapsed
+
+    root_pos = collapsed[:, root_idx, :3].copy()
+    root_quat = collapsed[:, root_idx, 3:7].copy()
+    for child_idx in children.tolist():
+        child_pos = collapsed[:, child_idx, :3].copy()
+        child_quat = collapsed[:, child_idx, 3:7].copy()
+        collapsed[:, child_idx, :3] = root_pos + child_pos
+        collapsed[:, child_idx, 3:7] = quat_mul_xyzw(root_quat, child_quat)
+
+    collapsed[:, root_idx, :3] = 0.0
+    collapsed[:, root_idx, 3:7] = np.asarray([0.0, 0.0, 0.0, 1.0], dtype=np.float32)
+    return collapsed
+
+
 def write_soma_bvh(
     *,
     output_path: str | Path,

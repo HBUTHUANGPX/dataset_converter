@@ -4,12 +4,12 @@ from pathlib import Path
 
 import numpy as np
 
-from dataset_converter.common.smpl import slice_smpl_body_motion
+from dataset_converter.common.smpl import convert_smpl_motion_to_soma_y_up_frame, slice_smpl_body_motion
 from dataset_converter.hdf5.io import load_body_frame_selection
 from dataset_converter.hdf5.smpl import build_segment_file_stem, selection_to_smpl_body_motion, split_contiguous_frame_ranges
-from dataset_converter.soma.bvh import canonicalize_motion_local_transforms_for_bvh, write_soma_bvh
+from dataset_converter.soma.bvh import prepare_soma_bvh_motion_transforms, write_soma_bvh
 from dataset_converter.soma.inversion import run_soma_inversion
-from dataset_converter.soma.transforms import ensure_local_transforms_pre_visualization_frame, normalize_root_parent_index
+from dataset_converter.soma.transforms import normalize_root_parent_index
 
 
 def export_segmented_soma_bvh(
@@ -30,7 +30,7 @@ def export_segmented_soma_bvh(
     if not ranges:
         return []
 
-    motion = selection_to_smpl_body_motion(selection)
+    motion = convert_smpl_motion_to_soma_y_up_frame(selection_to_smpl_body_motion(selection))
     soma_output = run_soma_inversion(
         motion,
         device=device,
@@ -42,13 +42,11 @@ def export_segmented_soma_bvh(
     joint_names = list(soma_output["joint_names"])
     parent_indices = normalize_root_parent_index(soma_output["parent_indices"])
     reference_local_transforms = np.asarray(soma_output["reference_local_transforms"], dtype=np.float32)
-    human_local_transforms = canonicalize_motion_local_transforms_for_bvh(
-        local_transforms=ensure_local_transforms_pre_visualization_frame(
-            local_transforms=np.asarray(soma_output["local_transforms"], dtype=np.float32),
-            parent_indices=parent_indices,
-            joint_names=joint_names,
-        ),
+    human_local_transforms = prepare_soma_bvh_motion_transforms(
+        joint_names=joint_names,
         parent_indices=parent_indices,
+        reference_local_transforms=reference_local_transforms,
+        local_transforms=np.asarray(soma_output["local_transforms"], dtype=np.float32),
     )
 
     output_dir = Path(soma_bvh_output_dir)
