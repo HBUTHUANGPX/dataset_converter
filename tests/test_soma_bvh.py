@@ -7,7 +7,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 
-def test_prepare_soma_bvh_motion_transforms_adds_hips_rest_offset_before_canonicalizing_root() -> None:
+def test_prepare_soma_bvh_motion_transforms_writes_position_channels_in_centimeters_relative_to_first_frame() -> None:
     from dataset_converter.soma.bvh import prepare_soma_bvh_motion_transforms
 
     joint_names = ["Root", "Hips", "Head"]
@@ -25,7 +25,12 @@ def test_prepare_soma_bvh_motion_transforms_adds_hips_rest_offset_before_canonic
         [
             [
                 [1.0, 2.0, 3.0, *root_quat.tolist()],
-                [0.5, -1.0, 2.0, 0.0, 0.0, 0.0, 1.0],
+                [0.5, 0.70, 2.0, 0.0, 0.0, 0.0, 1.0],
+                [0.0, 15.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+            ],
+            [
+                [1.25, 2.5, 3.75, *root_quat.tolist()],
+                [0.75, 0.80, 2.25, 0.0, 0.0, 0.0, 1.0],
                 [0.0, 15.0, 0.0, 0.0, 0.0, 0.0, 1.0],
             ]
         ],
@@ -39,10 +44,15 @@ def test_prepare_soma_bvh_motion_transforms_adds_hips_rest_offset_before_canonic
         local_transforms=local_transforms,
     )
 
-    expected_hips_position = local_transforms[0, 0, :3] + reference_local_transforms[1, :3] + local_transforms[0, 1, :3]
-    np.testing.assert_allclose(prepared[0, 0, :3], np.zeros(3, dtype=np.float32), atol=1e-6)
-    np.testing.assert_allclose(prepared[0, 0, 3:7], np.asarray([0.0, 0.0, 0.0, 1.0], dtype=np.float32), atol=1e-6)
-    np.testing.assert_allclose(prepared[0, 1, :3], expected_hips_position, atol=1e-5)
+    collapsed_hips = local_transforms[:, 0, :3] + local_transforms[:, 1, :3]
+    expected_hips_position = reference_local_transforms[1, :3] + (collapsed_hips - collapsed_hips[:1]) * 100.0
+    np.testing.assert_allclose(prepared[:, 0, :3], np.zeros((2, 3), dtype=np.float32), atol=1e-6)
+    np.testing.assert_allclose(
+        prepared[:, 0, 3:7],
+        np.broadcast_to(np.asarray([0.0, 0.0, 0.0, 1.0], dtype=np.float32), (2, 4)),
+        atol=1e-6,
+    )
+    np.testing.assert_allclose(prepared[:, 1, :3], expected_hips_position, atol=1e-5)
 
 
 def test_hdf5_soma_bvh_exports_y_up_motion_without_post_inversion_frame_rotation(monkeypatch, tmp_path: Path) -> None:
@@ -79,7 +89,7 @@ def test_hdf5_soma_bvh_exports_y_up_motion_without_post_inversion_frame_rotation
     )
 
     np.testing.assert_allclose(captured["motion_transl"], expected_motion.transl, atol=1e-6)
-    np.testing.assert_allclose(captured["written_local_transforms"][0, 1, :3], [10.0, 121.0, 30.0], atol=1e-6)
+    np.testing.assert_allclose(captured["written_local_transforms"][0, 1, :3], [0.0, 101.0, 0.0], atol=1e-6)
 
 
 def test_nymeria_soma_bvh_does_not_rotate_post_inversion_root_translation(monkeypatch, tmp_path: Path) -> None:
@@ -121,16 +131,16 @@ def test_nymeria_soma_bvh_does_not_rotate_post_inversion_root_translation(monkey
     )
 
     np.testing.assert_allclose(captured["motion_transl"], [[1.0, 2.0, 3.0]], atol=1e-6)
-    np.testing.assert_allclose(captured["written_local_transforms"][0, 1, :3], [10.0, 121.0, 30.0], atol=1e-6)
+    np.testing.assert_allclose(captured["written_local_transforms"][0, 1, :3], [0.0, 101.0, 0.0], atol=1e-6)
 
 
 def _fake_soma_output_with_z_spine() -> dict[str, np.ndarray | list[str]]:
     local_transforms = np.asarray(
         [
             [
-                [10.0, 20.0, 30.0, 0.0, 0.0, 0.0, 1.0],
+                [0.10, 0.20, 0.30, 0.0, 0.0, 0.0, 1.0],
                 [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
-                [0.0, 0.0, 15.0, 0.0, 0.0, 0.0, 1.0],
+                [0.0, 0.0, 0.15, 0.0, 0.0, 0.0, 1.0],
             ]
         ],
         dtype=np.float32,

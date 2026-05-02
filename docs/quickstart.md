@@ -80,7 +80,7 @@ dataset-converter-nymeria-batch \
 
 SOMA BVH export uses CUDA and requires the SOMA Python runtime to be importable in the active environment. It is intentionally sequential even in batch mode.
 
-The exported SOMA BVH follows the SOMA retargeter convention: `Root` stays as a zero virtual root, `Hips` carries the root motion in SOMA's Y-up BVH frame, and HDF5 raw SMPL root motion is converted to that Y-up frame before SOMA inversion. If you are regenerating files after changing exporter code, remove old `soma_bvh/*.bvh` files or omit `--skip-existing`; otherwise existing BVHs are intentionally left untouched.
+The exported SOMA BVH follows the SOMA retargeter convention: `Root` stays as a zero virtual root, `Hips` carries the root motion in SOMA's Y-up BVH frame, and all BVH position channels are written in centimeters. `Hips` position channels are written as the SOMA reference offset plus motion relative to the first valid frame, so absolute source heights from MVNX/HDF5 are not double-counted. HDF5 raw SMPL root motion is converted to that Y-up frame before SOMA inversion. If you are regenerating files after changing exporter code, remove old `soma_bvh/*.bvh` files or omit `--skip-existing`; otherwise existing BVHs are intentionally left untouched.
 
 Install SOMA/GPU dependencies when needed:
 

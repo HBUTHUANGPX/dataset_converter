@@ -48,14 +48,18 @@ def prepare_soma_bvh_motion_transforms(
     reference_local_transforms: np.ndarray,
     local_transforms: np.ndarray,
     position_channel_joints: tuple[str, ...] = DEFAULT_POSITION_CHANNEL_JOINTS,
+    motion_position_scale: float = 100.0,
+    normalize_position_channels_to_first_frame: bool = True,
 ) -> np.ndarray:
     """Convert SOMA inversion local transforms into SOMA BVH motion-channel transforms.
 
     The SOMA BVH loader treats position channels as complete local translations
-    and ignores the hierarchy OFFSET for those joints.  SOMA inversion returns
-    the Hips translation as a dynamic offset relative to the rest local
-    transform, so non-root position-channel joints need their reference
-    translation restored before the virtual Root is folded into them.
+    and ignores the hierarchy OFFSET for those joints.  SOMA assets store BVH
+    offsets in centimeters, while inversion motion translations are meter-like.
+    We first fold the virtual Root into Hips, then write position channels as
+    reference offset plus centimeter-scale motion relative to the first frame.
+    This preserves displacement while avoiding double-counting absolute source
+    heights such as Nymeria's MVNX pelvis/root height.
     """
 
     joint_names = [str(name) for name in joint_names]
@@ -79,16 +83,26 @@ def prepare_soma_bvh_motion_transforms(
         raise ValueError(f"Expected exactly one root joint, got indices {root_indices.tolist()}.")
     root_idx = int(root_indices[0])
 
-    position_channel_set = set(position_channel_joints)
-    for joint_idx, joint_name in enumerate(joint_names):
-        if joint_idx != root_idx and joint_name in position_channel_set:
-            prepared[:, joint_idx, :3] += reference_local_transforms[joint_idx, :3]
-
-    return _collapse_virtual_root_for_soma_bvh(
+    prepared = _collapse_virtual_root_for_soma_bvh(
         local_transforms=prepared,
         parent_indices=parent_indices,
         root_idx=root_idx,
     )
+
+    position_channel_set = set(position_channel_joints)
+    for joint_idx, joint_name in enumerate(joint_names):
+        if joint_name in position_channel_set:
+            if joint_idx != root_idx:
+                dynamic_translation = prepared[:, joint_idx, :3]
+                if normalize_position_channels_to_first_frame:
+                    dynamic_translation = dynamic_translation - dynamic_translation[:1]
+                prepared[:, joint_idx, :3] = reference_local_transforms[joint_idx, :3] + (
+                    dynamic_translation * float(motion_position_scale)
+                )
+            else:
+                prepared[:, joint_idx, :3] *= float(motion_position_scale)
+
+    return prepared
 
 
 def _collapse_virtual_root_for_soma_bvh(
