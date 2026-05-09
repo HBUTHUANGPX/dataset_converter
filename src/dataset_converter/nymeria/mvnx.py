@@ -34,15 +34,6 @@ def _parse_float_array(text: str | None, *, width: int) -> np.ndarray:
     return values.reshape(-1, width)
 
 
-def _read_subject_metadata(mvnx_path: Path) -> tuple[float, int]:
-    for _, elem in ET.iterparse(mvnx_path, events=("start",)):
-        if _tag_name(elem) == "subject":
-            fps = float(elem.attrib.get("frameRate", 240))
-            segment_count = int(elem.attrib.get("segmentCount", 23))
-            return fps, segment_count
-    raise ValueError(f"No subject metadata found in {mvnx_path}.")
-
-
 def load_mvnx_motion(
     mvnx_path: str | Path,
     *,
@@ -56,45 +47,60 @@ def load_mvnx_motion(
     if not mvnx_path.is_file():
         raise FileNotFoundError(f"MVNX file not found: {mvnx_path}")
 
-    fps, segment_count = _read_subject_metadata(mvnx_path)
     stop = None if end_frame in (-1, None) else int(end_frame)
     start_frame = int(start_frame)
     stride = int(stride)
+    fps: float | None = None
+    segment_count: int | None = None
 
     quats: list[np.ndarray] = []
     positions: list[np.ndarray] = []
     frame_indices: list[int] = []
     timestamps_ms: list[int] = []
 
-    for _, elem in ET.iterparse(mvnx_path, events=("end",)):
-        if _tag_name(elem) != "frame" or elem.attrib.get("type") != "normal":
-            continue
+    try:
+        with mvnx_path.open("rb") as handle:
+            for event, elem in ET.iterparse(handle, events=("start", "end")):
+                elem_name = _tag_name(elem)
+                if event == "start" and elem_name == "subject":
+                    fps = float(elem.attrib.get("frameRate", 240))
+                    segment_count = int(elem.attrib.get("segmentCount", 23))
+                    continue
+                if event != "end" or elem_name != "frame" or elem.attrib.get("type") != "normal":
+                    continue
+                if segment_count is None:
+                    raise ValueError(f"No subject metadata found before frame data in {mvnx_path}.")
 
-        frame_idx = int(elem.attrib["index"])
-        if frame_idx < start_frame or (stop is not None and frame_idx >= stop) or (frame_idx - start_frame) % stride != 0:
-            elem.clear()
-            continue
+                frame_idx = int(elem.attrib["index"])
+                if frame_idx < start_frame or (stop is not None and frame_idx >= stop) or (frame_idx - start_frame) % stride != 0:
+                    elem.clear()
+                    continue
 
-        orientation_text = None
-        position_text = None
-        for child in elem:
-            child_name = _tag_name(child)
-            if child_name == "orientation":
-                orientation_text = child.text
-            elif child_name == "position":
-                position_text = child.text
-        quat = _parse_float_array(orientation_text, width=4)
-        pos = _parse_float_array(position_text, width=3)
-        if quat.shape != (segment_count, 4):
-            raise ValueError(f"Frame {frame_idx} orientation shape {quat.shape}, expected ({segment_count}, 4).")
-        if pos.shape != (segment_count, 3):
-            raise ValueError(f"Frame {frame_idx} position shape {pos.shape}, expected ({segment_count}, 3).")
+                orientation_text = None
+                position_text = None
+                for child in elem:
+                    child_name = _tag_name(child)
+                    if child_name == "orientation":
+                        orientation_text = child.text
+                    elif child_name == "position":
+                        position_text = child.text
+                quat = _parse_float_array(orientation_text, width=4)
+                pos = _parse_float_array(position_text, width=3)
+                if quat.shape != (segment_count, 4):
+                    raise ValueError(f"Frame {frame_idx} orientation shape {quat.shape}, expected ({segment_count}, 4).")
+                if pos.shape != (segment_count, 3):
+                    raise ValueError(f"Frame {frame_idx} position shape {pos.shape}, expected ({segment_count}, 3).")
 
-        quats.append(quat)
-        positions.append(pos)
-        frame_indices.append(frame_idx)
-        timestamps_ms.append(int(elem.attrib["ms"]))
-        elem.clear()
+                quats.append(quat)
+                positions.append(pos)
+                frame_indices.append(frame_idx)
+                timestamps_ms.append(int(elem.attrib["ms"]))
+                elem.clear()
+    except OSError as exc:
+        raise RuntimeError(f"Failed to read MVNX file {mvnx_path}: {type(exc).__name__}: {exc}") from exc
+
+    if fps is None or segment_count is None:
+        raise ValueError(f"No subject metadata found in {mvnx_path}.")
 
     return MvnxMotion(
         segment_quat_wxyz=np.asarray(quats, dtype=np.float32),
