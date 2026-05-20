@@ -10,24 +10,104 @@ from typing import Iterable
 from dataset_converter.common.batch import BatchExportResult, run_multiprocess_tasks, run_sequential_tasks
 from dataset_converter.common.paths import default_nymeria_output_root, default_nymeria_test_data_root
 from dataset_converter.nymeria.annotation import build_annotation_payload, save_annotation_payload
+from dataset_converter.nymeria.constants import NYMERIA_TIME_ALIGNMENT_VERSION
 from dataset_converter.nymeria.smpl import build_smpl_motion_payload, save_smpl_motion_npz
 from dataset_converter.nymeria.soma_bvh import export_nymeria_to_soma_bvh
 from dataset_converter.nymeria.video import HEAD_VIDEO_STREAMS, export_head_videos, resolve_head_video_time_zero_ns
 
 
 DEFAULT_SOMA_BATCH_SIZE = 256
-NYMERIA_TIME_ALIGNMENT_VERSION = 4
 
 
 @dataclass(frozen=True)
 class NymeriaSequenceTask:
+    """One Nymeria sequence export task.
+
+    Responsibilities:
+        Carry source and output paths for a sequence through batch exporters.
+    Preconditions:
+        ``sequence_dir`` points to a sequence directory.
+    Postconditions:
+        ``task_id`` returns the stable sequence id used in logs and summaries.
+    """
+
     sequence_id: str
     sequence_dir: Path
     output_dir: Path
 
     @property
     def task_id(self) -> str:
+        """Return the stable task identifier.
+
+        Preconditions:
+            The task has been constructed.
+        Postconditions:
+            Returns ``sequence_id`` unchanged.
+        """
+
         return self.sequence_id
+
+
+class ConvertedOutputGuard:
+    """Validate whether converted NPZ outputs are current enough to skip.
+
+    Responsibilities:
+        Encapsulate key existence and time-alignment-version checks for
+        ``--skip-existing``.
+    Preconditions:
+        Paths point to NPZ files when they exist.
+    Postconditions:
+        Returns ``False`` for missing, stale, malformed, or incomplete files.
+    """
+
+    def __init__(self, *, required_time_alignment_version: int | None = None) -> None:
+        """Create a converted output guard.
+
+        Preconditions:
+            ``required_time_alignment_version`` is ``None`` or an integer.
+        Postconditions:
+            The guard can evaluate NPZ files for skip decisions.
+        """
+
+        self._required_time_alignment_version = required_time_alignment_version
+
+    @property
+    def required_time_alignment_version(self) -> int | None:
+        """Return the required Nymeria time alignment version.
+
+        Preconditions:
+            The guard has been constructed.
+        Postconditions:
+            Returns ``None`` when version checking is disabled.
+        """
+
+        return self._required_time_alignment_version
+
+    def has_required_npz_fields(self, path: Path, keys: tuple[str, ...]) -> bool:
+        """Return whether ``path`` contains all required NPZ fields.
+
+        Preconditions:
+            ``keys`` contains field names expected in the NPZ file.
+        Postconditions:
+            Returns ``True`` only when all keys exist and the version matches
+            when configured.
+        """
+
+        if not path.is_file():
+            return False
+        try:
+            import numpy as np
+
+            with np.load(path, allow_pickle=True) as data:
+                if not all(key in data.files for key in keys):
+                    return False
+                if self.required_time_alignment_version is None:
+                    return True
+                if "nymeria_time_alignment_version" not in data.files:
+                    return False
+                return int(np.asarray(data["nymeria_time_alignment_version"]).reshape(())) == int(self.required_time_alignment_version)
+        except Exception:
+            return False
 
 
 def discover_nymeria_sequence_tasks(
@@ -45,21 +125,15 @@ def discover_nymeria_sequence_tasks(
 
 
 def _npz_has_keys(path: Path, keys: tuple[str, ...], *, time_alignment_version: int | None = None) -> bool:
-    if not path.is_file():
-        return False
-    try:
-        import numpy as np
+    """Compatibility wrapper for checking NPZ skip fields.
 
-        with np.load(path, allow_pickle=True) as data:
-            if not all(key in data.files for key in keys):
-                return False
-            if time_alignment_version is not None:
-                if "nymeria_time_alignment_version" not in data.files:
-                    return False
-                return int(np.asarray(data["nymeria_time_alignment_version"]).reshape(())) == int(time_alignment_version)
-            return True
-    except Exception:
-        return False
+    Preconditions:
+        ``path`` may or may not exist.
+    Postconditions:
+        Returns ``True`` only when ``ConvertedOutputGuard`` accepts the file.
+    """
+
+    return ConvertedOutputGuard(required_time_alignment_version=time_alignment_version).has_required_npz_fields(path, keys)
 
 
 def _export_annotation_task(

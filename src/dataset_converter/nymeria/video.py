@@ -9,8 +9,7 @@ from typing import Callable, Iterable, Protocol
 import numpy as np
 from tqdm.auto import tqdm
 
-
-NYMERIA_TIME_ALIGNMENT_VERSION = 4
+from dataset_converter.nymeria.constants import NYMERIA_TIME_ALIGNMENT_VERSION
 
 
 HEAD_VIDEO_STREAMS = {
@@ -32,16 +31,186 @@ HEAD_VIDEO_STREAMS = {
 }
 
 
-class VideoWriter(Protocol):
-    def write(self, frame: np.ndarray) -> None: ...
+@dataclass(frozen=True)
+class HeadVideoStreamConfig:
+    """Configuration for one Nymeria head-video stream.
 
-    def release(self) -> None: ...
+    Responsibilities:
+        Describe output naming, provider labels, and fallback stream id.
+    Preconditions:
+        ``labels`` contains provider labels in preference order.
+    Postconditions:
+        Exporters can resolve stream ids without hard-coding stream metadata.
+    """
+
+    name: str
+    output_stem: str
+    labels: tuple[str, ...]
+    stream_id: str
+
+
+@dataclass(frozen=True)
+class HeadVideoExportConfig:
+    """Configuration for head-video export.
+
+    Responsibilities:
+        Group frame slicing, stream selection, rotation, codec, and fps options.
+    Preconditions:
+        ``stride`` must be positive before export.
+    Postconditions:
+        Export code can pass one configuration object rather than loose
+        primitives.
+    """
+
+    streams: tuple[str, ...] = ("slam-left", "slam-right")
+    fps: float | None = None
+    start_frame: int = 0
+    end_frame: int = -1
+    stride: int = 1
+    max_frames: int | None = None
+    rotate_degrees: int = 0
+    codec: str = "mp4v"
+    prefer_motion_vrs: bool = False
+
+    def validate(self) -> None:
+        """Validate export options.
+
+        Preconditions:
+            The config has been constructed.
+        Postconditions:
+            Raises ``ValueError`` for invalid stride; otherwise returns ``None``.
+        """
+
+        if self.stride <= 0:
+            raise ValueError(f"stride must be positive, got {self.stride}.")
+
+
+class HeadVideoTimestampMapper:
+    """Map VRS device/capture timestamps to VRS TIME_CODE timestamps.
+
+    Responsibilities:
+        Centralize timestamp-domain conversion for video alignment.
+    Preconditions:
+        Provider exposes ``convert_from_device_time_to_timecode_ns``.
+    Postconditions:
+        Returned timestamps can be compared with motion/text TIME_CODE fields.
+    """
+
+    def device_to_timecode_ns(self, provider, device_time_ns: int) -> int:
+        """Convert a device-time timestamp to TIME_CODE.
+
+        Preconditions:
+            ``provider`` supports device-to-time-code conversion.
+        Postconditions:
+            Returns an integer nanosecond TIME_CODE timestamp.
+        """
+
+        return _device_to_timecode_ns(provider, device_time_ns)
+
+
+class VideoWriter(Protocol):
+    """Protocol implemented by MP4 writer backends.
+
+    Responsibilities:
+        Hide ffmpeg/OpenCV writer differences behind a small interface.
+    Preconditions:
+        Frames passed to ``write`` match the configured frame size.
+    Postconditions:
+        ``release`` finalizes the output file or raises on failure.
+    """
+
+    def write(self, frame: np.ndarray) -> None:
+        """Write one frame to the output video.
+
+        Preconditions:
+            ``frame`` is a uint8 array matching the writer's frame size.
+        Postconditions:
+            The frame is queued or written to the underlying video backend.
+        """
+
+    def release(self) -> None:
+        """Finalize the output video.
+
+        Preconditions:
+            The writer has been created.
+        Postconditions:
+            Resources are released; backend failures raise exceptions.
+        """
 
 
 @dataclass(frozen=True)
 class HeadVideoExport:
+    """Result of exporting Nymeria head-camera videos.
+
+    Responsibilities:
+        Carry generated MP4 paths and their timestamp sidecar path.
+    Preconditions:
+        Paths are produced by ``export_head_videos``.
+    Postconditions:
+        Consumers can locate video outputs and synchronization metadata.
+    """
+
     video_paths: tuple[Path, ...]
     timestamps_path: Path
+
+
+class HeadVideoStreamRegistry:
+    """Lookup service for supported Nymeria head-video streams.
+
+    Responsibilities:
+        Convert stream names into ``HeadVideoStreamConfig`` objects and validate
+        stream choices.
+    Preconditions:
+        The registry is initialized with unique stream names.
+    Postconditions:
+        Unknown stream names raise ``ValueError`` with valid choices.
+    """
+
+    def __init__(self, streams: dict[str, dict[str, object]] | None = None) -> None:
+        """Create a stream registry.
+
+        Preconditions:
+            ``streams`` follows the ``HEAD_VIDEO_STREAMS`` dictionary shape.
+        Postconditions:
+            Registry configs are immutable dataclass instances.
+        """
+
+        source = streams or HEAD_VIDEO_STREAMS
+        self._streams = {
+            name: HeadVideoStreamConfig(
+                name=name,
+                output_stem=str(spec["output_stem"]),
+                labels=tuple(str(label) for label in spec["labels"]),
+                stream_id=str(spec["stream_id"]),
+            )
+            for name, spec in source.items()
+        }
+
+    @property
+    def choices(self) -> tuple[str, ...]:
+        """Return valid stream names.
+
+        Preconditions:
+            Registry construction succeeded.
+        Postconditions:
+            Returns sorted stream names.
+        """
+
+        return tuple(sorted(self._streams))
+
+    def get(self, stream_name: str) -> HeadVideoStreamConfig:
+        """Return a stream config by name.
+
+        Preconditions:
+            ``stream_name`` is user input or a known stream name.
+        Postconditions:
+            Returns a config or raises ``ValueError`` with valid choices.
+        """
+
+        if stream_name not in self._streams:
+            choices = ", ".join(self.choices)
+            raise ValueError(f"Unknown stream {stream_name!r}. Choices: {choices}.")
+        return self._streams[stream_name]
 
 
 def resolve_head_vrs_path(sequence_dir: str | Path, *, prefer_motion: bool = False) -> Path:
@@ -101,15 +270,15 @@ def _device_to_timecode_ns(provider, device_time_ns: int) -> int:
 
 
 def _resolve_stream_id(provider, stream_name: str):
-    spec = HEAD_VIDEO_STREAMS[stream_name]
-    for label in spec["labels"]:
+    spec = HeadVideoStreamRegistry().get(stream_name)
+    for label in spec.labels:
         try:
             stream_id = provider.get_stream_id_from_label(label)
         except Exception:
             stream_id = None
         if stream_id is not None:
             return stream_id
-    return _stream_id_from_string(str(spec["stream_id"]))
+    return _stream_id_from_string(str(spec.stream_id))
 
 
 def resolve_head_video_time_zero_ns(
@@ -123,7 +292,7 @@ def resolve_head_video_time_zero_ns(
     provider = (provider_factory or _create_projectaria_provider)(vrs_path)
     stream_id = _resolve_stream_id(provider, stream_name)
     _, first_record = provider.get_image_data_by_index(stream_id, max(0, int(start_frame)))
-    return _device_to_timecode_ns(provider, int(first_record.capture_timestamp_ns))
+    return HeadVideoTimestampMapper().device_to_timecode_ns(provider, int(first_record.capture_timestamp_ns))
 
 
 def _normalise_image_array(image_data) -> np.ndarray:
@@ -154,7 +323,28 @@ def _rotate_frame(frame: np.ndarray, rotate_degrees: int) -> np.ndarray:
 
 
 class FfmpegVideoWriter:
+    """FFmpeg-backed MP4 writer.
+
+    Responsibilities:
+        Stream raw frames into an ``ffmpeg`` subprocess and surface encoder
+        failures as Python exceptions.
+    Preconditions:
+        The ``ffmpeg`` executable is available on ``PATH``.
+    Postconditions:
+        ``release`` closes stdin, waits for ffmpeg, and validates the return
+        code.
+    """
+
     def __init__(self, path: Path, fps: float, frame_size: tuple[int, int]) -> None:
+        """Create an FFmpeg video writer.
+
+        Preconditions:
+            ``path`` is writable; ``fps`` is positive; ``frame_size`` is
+            ``(width, height)``.
+        Postconditions:
+            An ffmpeg subprocess is ready to receive BGR frames.
+        """
+
         path.parent.mkdir(parents=True, exist_ok=True)
         width, height = frame_size
         command = [
@@ -190,9 +380,26 @@ class FfmpegVideoWriter:
             raise RuntimeError("Unable to open ffmpeg stdin.")
 
     def write(self, frame: np.ndarray) -> None:
+        """Write one BGR frame to ffmpeg stdin.
+
+        Preconditions:
+            ``frame`` has the configured frame dimensions and 3 channels.
+        Postconditions:
+            Frame bytes are sent to the ffmpeg process.
+        """
+
         self._process.stdin.write(np.ascontiguousarray(frame).tobytes())
 
     def release(self) -> None:
+        """Finalize the ffmpeg stream and check encoder status.
+
+        Preconditions:
+            The writer was initialized successfully.
+        Postconditions:
+            The subprocess has exited; non-zero exit status raises
+            ``RuntimeError``.
+        """
+
         if self._process.stdin is not None:
             self._process.stdin.close()
         stderr = self._process.stderr.read().decode("utf-8", errors="replace") if self._process.stderr is not None else ""
@@ -260,7 +467,7 @@ def _write_stream_video(
         raise ValueError(f"stride must be positive, got {stride}.")
 
     stream_id = _resolve_stream_id(provider, stream_name)
-    output_stem = str(HEAD_VIDEO_STREAMS[stream_name]["output_stem"])
+    output_stem = HeadVideoStreamRegistry().get(stream_name).output_stem
     video_path = output_dir / f"{output_stem}.mp4"
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -282,7 +489,8 @@ def _write_stream_video(
     writer = writer_factory(video_path, stream_fps, (width, height), codec)
 
     first_capture_timestamp_ns = int(first_record.capture_timestamp_ns)
-    timestamps: list[int] = [_device_to_timecode_ns(provider, first_capture_timestamp_ns)]
+    timestamp_mapper = HeadVideoTimestampMapper()
+    timestamps: list[int] = [timestamp_mapper.device_to_timecode_ns(provider, first_capture_timestamp_ns)]
     capture_timestamps: list[int] = [first_capture_timestamp_ns]
     frame_indices: list[int] = [int(selected_indices[0])]
     try:
@@ -295,7 +503,7 @@ def _write_stream_video(
             frame = _rotate_frame(_normalise_image_array(image), rotate_degrees)
             writer.write(frame[:, :, ::-1])
             capture_timestamp_ns = int(record.capture_timestamp_ns)
-            timestamps.append(_device_to_timecode_ns(provider, capture_timestamp_ns))
+            timestamps.append(timestamp_mapper.device_to_timecode_ns(provider, capture_timestamp_ns))
             capture_timestamps.append(capture_timestamp_ns)
             frame_indices.append(int(frame_index))
     finally:
@@ -329,7 +537,20 @@ def export_head_videos(
     writer_factory: Callable[[Path, float, tuple[int, int], str], VideoWriter] = create_default_video_writer,
 ) -> HeadVideoExport:
     output_dir = Path(output_dir)
-    vrs_path = resolve_head_vrs_path(sequence_dir, prefer_motion=prefer_motion_vrs) if prefer_motion_vrs else resolve_head_data_vrs_path(sequence_dir)
+    export_config = HeadVideoExportConfig(
+        streams=tuple(streams),
+        fps=fps,
+        start_frame=start_frame,
+        end_frame=end_frame,
+        stride=stride,
+        max_frames=max_frames,
+        rotate_degrees=rotate_degrees,
+        codec=codec,
+        prefer_motion_vrs=prefer_motion_vrs,
+    )
+    export_config.validate()
+    stream_registry = HeadVideoStreamRegistry()
+    vrs_path = resolve_head_vrs_path(sequence_dir, prefer_motion=export_config.prefer_motion_vrs) if export_config.prefer_motion_vrs else resolve_head_data_vrs_path(sequence_dir)
     provider = (provider_factory or _create_projectaria_provider)(vrs_path)
 
     timestamp_payload: dict[str, np.ndarray] = {
@@ -339,30 +560,28 @@ def export_head_videos(
         "nymeria_time_alignment_version": np.asarray(NYMERIA_TIME_ALIGNMENT_VERSION, dtype=np.int32),
     }
     video_paths: list[Path] = []
-    for stream_name in streams:
-        if stream_name not in HEAD_VIDEO_STREAMS:
-            choices = ", ".join(sorted(HEAD_VIDEO_STREAMS))
-            raise ValueError(f"Unknown stream {stream_name!r}. Choices: {choices}.")
+    for stream_name in export_config.streams:
+        stream_registry.get(stream_name)
         video_path, stream_payload = _write_stream_video(
             provider=provider,
             stream_name=stream_name,
             output_dir=output_dir,
             writer_factory=writer_factory,
-            fps=fps,
-            start_frame=start_frame,
-            end_frame=end_frame,
-            stride=stride,
-            max_frames=max_frames,
-            rotate_degrees=rotate_degrees,
-            codec=codec,
+            fps=export_config.fps,
+            start_frame=export_config.start_frame,
+            end_frame=export_config.end_frame,
+            stride=export_config.stride,
+            max_frames=export_config.max_frames,
+            rotate_degrees=export_config.rotate_degrees,
+            codec=export_config.codec,
         )
         video_paths.append(video_path)
         timestamp_payload.update(stream_payload)
 
     time_zero_key = "rgb_timestamps_ns" if "rgb_timestamps_ns" in timestamp_payload else None
     if time_zero_key is None:
-        for stream_name in streams:
-            candidate = f"{HEAD_VIDEO_STREAMS[stream_name]['output_stem']}_timestamps_ns"
+        for stream_name in export_config.streams:
+            candidate = f"{stream_registry.get(stream_name).output_stem}_timestamps_ns"
             if candidate in timestamp_payload:
                 time_zero_key = candidate
                 break
