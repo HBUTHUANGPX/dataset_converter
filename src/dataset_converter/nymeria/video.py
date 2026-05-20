@@ -10,6 +10,9 @@ import numpy as np
 from tqdm.auto import tqdm
 
 
+NYMERIA_TIME_ALIGNMENT_VERSION = 4
+
+
 HEAD_VIDEO_STREAMS = {
     "slam-left": {
         "output_stem": "slam_left",
@@ -54,6 +57,16 @@ def resolve_head_vrs_path(sequence_dir: str | Path, *, prefer_motion: bool = Fal
     raise FileNotFoundError(f"No head VRS file found under {sequence_dir / 'recording_head' / 'data'}.")
 
 
+def resolve_head_data_vrs_path(sequence_dir: str | Path) -> Path:
+    sequence_dir = Path(sequence_dir)
+    data_vrs = sequence_dir / "recording_head" / "data" / "data.vrs"
+    if data_vrs.is_file():
+        return data_vrs
+    motion_vrs = sequence_dir / "recording_head" / "data" / "motion.vrs"
+    hint = "motion.vrs is present, but RGB/SLAM image streams are stored in data.vrs." if motion_vrs.is_file() else "motion.vrs is also missing."
+    raise FileNotFoundError(f"Missing head image VRS file: {data_vrs}. {hint}")
+
+
 def _create_projectaria_provider(vrs_path: Path):
     try:
         from projectaria_tools.core import data_provider
@@ -81,6 +94,12 @@ def _device_time_domain():
     return TimeDomain.DEVICE_TIME
 
 
+def _device_to_timecode_ns(provider, device_time_ns: int) -> int:
+    if hasattr(provider, "convert_from_device_time_to_timecode_ns"):
+        return int(provider.convert_from_device_time_to_timecode_ns(int(device_time_ns)))
+    raise RuntimeError("VRS provider does not support device-time to time-code conversion.")
+
+
 def _resolve_stream_id(provider, stream_name: str):
     spec = HEAD_VIDEO_STREAMS[stream_name]
     for label in spec["labels"]:
@@ -91,6 +110,20 @@ def _resolve_stream_id(provider, stream_name: str):
         if stream_id is not None:
             return stream_id
     return _stream_id_from_string(str(spec["stream_id"]))
+
+
+def resolve_head_video_time_zero_ns(
+    sequence_dir: str | Path,
+    *,
+    stream_name: str = "rgb",
+    start_frame: int = 0,
+    provider_factory: Callable[[Path], object] | None = None,
+) -> int:
+    vrs_path = resolve_head_data_vrs_path(sequence_dir)
+    provider = (provider_factory or _create_projectaria_provider)(vrs_path)
+    stream_id = _resolve_stream_id(provider, stream_name)
+    _, first_record = provider.get_image_data_by_index(stream_id, max(0, int(start_frame)))
+    return _device_to_timecode_ns(provider, int(first_record.capture_timestamp_ns))
 
 
 def _normalise_image_array(image_data) -> np.ndarray:
@@ -248,7 +281,9 @@ def _write_stream_video(
     height, width = first_frame.shape[:2]
     writer = writer_factory(video_path, stream_fps, (width, height), codec)
 
-    timestamps: list[int] = [int(first_record.capture_timestamp_ns)]
+    first_capture_timestamp_ns = int(first_record.capture_timestamp_ns)
+    timestamps: list[int] = [_device_to_timecode_ns(provider, first_capture_timestamp_ns)]
+    capture_timestamps: list[int] = [first_capture_timestamp_ns]
     frame_indices: list[int] = [int(selected_indices[0])]
     try:
         writer.write(first_frame[:, :, ::-1])
@@ -259,7 +294,9 @@ def _write_stream_video(
                 continue
             frame = _rotate_frame(_normalise_image_array(image), rotate_degrees)
             writer.write(frame[:, :, ::-1])
-            timestamps.append(int(record.capture_timestamp_ns))
+            capture_timestamp_ns = int(record.capture_timestamp_ns)
+            timestamps.append(_device_to_timecode_ns(provider, capture_timestamp_ns))
+            capture_timestamps.append(capture_timestamp_ns)
             frame_indices.append(int(frame_index))
     finally:
         writer.release()
@@ -268,6 +305,7 @@ def _write_stream_video(
         video_path,
         {
             f"{output_stem}_timestamps_ns": np.asarray(timestamps, dtype=np.int64),
+            f"{output_stem}_capture_timestamps_ns": np.asarray(capture_timestamps, dtype=np.int64),
             f"{output_stem}_frame_indices": np.asarray(frame_indices, dtype=np.int32),
             f"{output_stem}_stream_fps": np.asarray(stream_fps, dtype=np.float32),
         },
@@ -291,11 +329,14 @@ def export_head_videos(
     writer_factory: Callable[[Path, float, tuple[int, int], str], VideoWriter] = create_default_video_writer,
 ) -> HeadVideoExport:
     output_dir = Path(output_dir)
-    vrs_path = resolve_head_vrs_path(sequence_dir, prefer_motion=prefer_motion_vrs)
+    vrs_path = resolve_head_vrs_path(sequence_dir, prefer_motion=prefer_motion_vrs) if prefer_motion_vrs else resolve_head_data_vrs_path(sequence_dir)
     provider = (provider_factory or _create_projectaria_provider)(vrs_path)
 
     timestamp_payload: dict[str, np.ndarray] = {
         "source_vrs_path": np.asarray(str(vrs_path)),
+        "time_domain": np.asarray("time_code"),
+        "capture_time_domain": np.asarray("device_time"),
+        "nymeria_time_alignment_version": np.asarray(NYMERIA_TIME_ALIGNMENT_VERSION, dtype=np.int32),
     }
     video_paths: list[Path] = []
     for stream_name in streams:
@@ -317,6 +358,24 @@ def export_head_videos(
         )
         video_paths.append(video_path)
         timestamp_payload.update(stream_payload)
+
+    time_zero_key = "rgb_timestamps_ns" if "rgb_timestamps_ns" in timestamp_payload else None
+    if time_zero_key is None:
+        for stream_name in streams:
+            candidate = f"{HEAD_VIDEO_STREAMS[stream_name]['output_stem']}_timestamps_ns"
+            if candidate in timestamp_payload:
+                time_zero_key = candidate
+                break
+    if time_zero_key is not None:
+        time_zero_ns = int(np.asarray(timestamp_payload[time_zero_key], dtype=np.int64).reshape(-1)[0])
+        timestamp_payload["time_zero_ns"] = np.asarray(time_zero_ns, dtype=np.int64)
+        timestamp_payload["time_zero_source"] = np.asarray(
+            "recording_head/rgb/frame_0" if time_zero_key == "rgb_timestamps_ns" else time_zero_key.replace("_timestamps_ns", "/frame_0")
+        )
+        for key, value in list(timestamp_payload.items()):
+            if key.endswith("_timestamps_ns") and not key.endswith("_capture_timestamps_ns"):
+                prefix = key[: -len("_timestamps_ns")]
+                timestamp_payload[f"{prefix}_relative_timestamps_ns"] = np.asarray(value, dtype=np.int64) - time_zero_ns
 
     timestamps_path = output_dir / "timestamps.npz"
     np.savez(timestamps_path, **timestamp_payload)

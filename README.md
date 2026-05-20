@@ -40,6 +40,7 @@ It also installs command line entry points:
 ```bash
 dataset-converter-hdf5-batch --help
 dataset-converter-nymeria-batch --help
+dataset-converter-nymeria-viewer --help
 ```
 
 You can also run the same CLIs without installing console scripts:
@@ -73,13 +74,21 @@ uv pip install -e ".[video]"
 
 If a system `ffmpeg` executable is available, MP4 export uses ffmpeg automatically. If not, it falls back to OpenCV `mp4v`.
 
+Converted Nymeria Rerun visualization needs Rerun plus OpenCV:
+
+```bash
+uv pip install -e ".[viewer]"
+```
+
 ## Code Entrypoints
 
 - CLI: `dataset_converter.hdf5.cli.batch_export:main`
 - CLI: `dataset_converter.nymeria.cli.batch_export:main`
+- CLI: `dataset_converter.visualization.nymeria_rerun:main`
 - HDF5 batch API: `dataset_converter.hdf5.batch`
 - Nymeria batch API: `dataset_converter.nymeria.batch`
 - Nymeria head video export: `dataset_converter.nymeria.video`
+- Converted Nymeria Rerun viewer: `dataset_converter.visualization.nymeria_rerun`
 - Shared SOMA BVH/runtime code: `dataset_converter.soma`
 - Vendored SOMA runtime package: top-level `soma`
 
@@ -162,6 +171,25 @@ dataset-converter-nymeria-batch \
   --skip-existing
 ```
 
+Batch Nymeria annotation, SMPL, and color head RGB video with one shared relative timeline:
+
+```bash
+dataset-converter-nymeria-batch \
+  --test-data-root dataset_converter/test_data/nymeria_test_data \
+  --output-root dataset_converter/test_out/nymeria_batch \
+  --exports annotation smpl head-video \
+  --video-streams rgb \
+  --workers 4 \
+  --skip-existing \
+  --summary-path dataset_converter/test_out/nymeria_batch/summary.jsonl
+```
+
+When `annotation` or `smpl` are exported together with `head-video --video-streams rgb`, the batch command reads the first RGB frame in VRS `TIME_CODE` before exporting motion files. It writes that value as `time_zero_ns` and stores relative motion/video timestamps in nanoseconds, so downstream tools can align SMPL, text, and RGB video on the same zero point. Device/capture timestamps are kept separately in `head_video/timestamps.npz` as `*_capture_timestamps_ns`.
+
+Nymeria motion exports intentionally read only `body_xdata_mvnx`. The exporter detects MVNX files whose `ms` attributes are 10x larger than the shared Nymeria timeline and normalizes them before rebuilding frame deltas from `frameRate` and frame indices. The original MVNX timestamps are still saved as `raw_frame_timestamps` / `raw_timestamps_ns`.
+
+For Nymeria narration CSVs, the annotation exporter anchors the first narration row to the first exported MVNX/body frame while preserving each text segment's original duration and row-to-row interval.
+
 Batch Nymeria head-mounted stereo video export:
 
 ```bash
@@ -173,7 +201,9 @@ dataset-converter-nymeria-batch \
   --skip-existing
 ```
 
-This writes `head_video/slam_left.mp4`, `head_video/slam_right.mp4`, and `head_video/timestamps.npz` for each sequence. The `.npz` sidecar keeps the original VRS capture timestamps because MP4 timestamps are not precise enough for motion alignment.
+This writes `head_video/slam_left.mp4`, `head_video/slam_right.mp4`, and `head_video/timestamps.npz` for each sequence. The `.npz` sidecar keeps VRS `TIME_CODE` timestamps for alignment, plus original device/capture timestamps for diagnostics, because MP4 timestamps are not precise enough for motion alignment.
+
+Nymeria video export requires `recording_head/data/data.vrs`. A `motion.vrs` file alone contains motion sensor streams and cannot provide RGB/SLAM images.
 
 The two SLAM streams are stereo but grayscale. To export the color head camera instead, use:
 
@@ -181,6 +211,25 @@ The two SLAM streams are stereo but grayscale. To export the color head camera i
 dataset-converter-nymeria-batch \
   --exports head-video \
   --video-streams rgb
+```
+
+Visualize one converted Nymeria sequence with synchronized SMPL skeleton, text, and color RGB video:
+
+```bash
+dataset-converter-nymeria-viewer \
+  --sequence-dir nymeria_parse/out/batch/<sequence_id> \
+  --smpl-model-path "$SMPL_MODEL_PATH"
+```
+
+The viewer uses relative timestamps when the converted files contain them and logs a `world/text/time_axis` panel that states the active time domain and zero point.
+
+For offline review, write a Rerun recording instead of spawning the viewer:
+
+```bash
+dataset-converter-nymeria-viewer \
+  --sequence-dir nymeria_parse/out/batch/<sequence_id> \
+  --smpl-model-path "$SMPL_MODEL_PATH" \
+  --save-rrd
 ```
 
 Batch SOMA BVH export is intentionally sequential because it uses CUDA:

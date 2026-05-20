@@ -18,6 +18,7 @@ from dataset_converter.nymeria.batch import (
     export_batch_head_video,
     export_batch_smpl,
     export_batch_soma_bvh,
+    resolve_batch_rgb_time_zero,
 )
 from dataset_converter.nymeria.video import HEAD_VIDEO_STREAMS
 
@@ -69,6 +70,9 @@ def main(argv: list[str] | None = None) -> int:
 
     summary_rows: list[str] = []
     exit_code = 0
+    time_zero_ns_by_sequence_id = None
+    if ("annotation" in args.exports or "smpl" in args.exports) and "head-video" in args.exports and "rgb" in args.video_streams:
+        time_zero_ns_by_sequence_id = resolve_batch_rgb_time_zero(tasks, start_frame=args.start_frame)
 
     if "annotation" in args.exports:
         results = export_batch_annotation(
@@ -77,6 +81,7 @@ def main(argv: list[str] | None = None) -> int:
             start_frame=args.start_frame,
             end_frame=args.end_frame,
             stride=args.stride,
+            time_zero_ns_by_sequence_id=time_zero_ns_by_sequence_id,
             skip_existing=args.skip_existing,
         )
         print_stage("annotation", results)
@@ -94,6 +99,7 @@ def main(argv: list[str] | None = None) -> int:
             start_frame=args.start_frame,
             end_frame=args.end_frame,
             stride=args.stride,
+            time_zero_ns_by_sequence_id=time_zero_ns_by_sequence_id,
             skip_existing=args.skip_existing,
         )
         print_stage("smpl", results)

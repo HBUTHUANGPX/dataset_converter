@@ -11,6 +11,9 @@ Requires-Dist: tqdm
 Provides-Extra: video
 Requires-Dist: opencv-python; extra == "video"
 Requires-Dist: projectaria-tools; extra == "video"
+Provides-Extra: viewer
+Requires-Dist: opencv-python; extra == "viewer"
+Requires-Dist: rerun-sdk; extra == "viewer"
 Provides-Extra: soma
 Requires-Dist: smplx; extra == "soma"
 Requires-Dist: newton==1.0.0; extra == "soma"
@@ -91,6 +94,7 @@ It also installs command line entry points:
 ```bash
 dataset-converter-hdf5-batch --help
 dataset-converter-nymeria-batch --help
+dataset-converter-nymeria-viewer --help
 ```
 
 You can also run the same CLIs without installing console scripts:
@@ -124,13 +128,21 @@ uv pip install -e ".[video]"
 
 If a system `ffmpeg` executable is available, MP4 export uses ffmpeg automatically. If not, it falls back to OpenCV `mp4v`.
 
+Converted Nymeria Rerun visualization needs Rerun plus OpenCV:
+
+```bash
+uv pip install -e ".[viewer]"
+```
+
 ## Code Entrypoints
 
 - CLI: `dataset_converter.hdf5.cli.batch_export:main`
 - CLI: `dataset_converter.nymeria.cli.batch_export:main`
+- CLI: `dataset_converter.visualization.nymeria_rerun:main`
 - HDF5 batch API: `dataset_converter.hdf5.batch`
 - Nymeria batch API: `dataset_converter.nymeria.batch`
 - Nymeria head video export: `dataset_converter.nymeria.video`
+- Converted Nymeria Rerun viewer: `dataset_converter.visualization.nymeria_rerun`
 - Shared SOMA BVH/runtime code: `dataset_converter.soma`
 - Vendored SOMA runtime package: top-level `soma`
 
@@ -232,6 +244,23 @@ The two SLAM streams are stereo but grayscale. To export the color head camera i
 dataset-converter-nymeria-batch \
   --exports head-video \
   --video-streams rgb
+```
+
+Visualize one converted Nymeria sequence with synchronized SMPL skeleton, text, and color RGB video:
+
+```bash
+dataset-converter-nymeria-viewer \
+  --sequence-dir nymeria_parse/out/batch/<sequence_id> \
+  --smpl-model-path "$SMPL_MODEL_PATH"
+```
+
+For offline review, write a Rerun recording instead of spawning the viewer:
+
+```bash
+dataset-converter-nymeria-viewer \
+  --sequence-dir nymeria_parse/out/batch/<sequence_id> \
+  --smpl-model-path "$SMPL_MODEL_PATH" \
+  --save-rrd
 ```
 
 Batch SOMA BVH export is intentionally sequential because it uses CUDA:

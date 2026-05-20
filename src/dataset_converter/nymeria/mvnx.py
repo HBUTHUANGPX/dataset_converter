@@ -13,6 +13,8 @@ class MvnxMotion:
     segment_pos_xyz: np.ndarray
     frame_indices: np.ndarray
     frame_timestamps: np.ndarray
+    raw_frame_timestamps: np.ndarray
+    timestamp_source: str
     fps: float
     segment_count: int
 
@@ -32,6 +34,20 @@ def _parse_float_array(text: str | None, *, width: int) -> np.ndarray:
     if values.size % width != 0:
         raise ValueError(f"Expected value count divisible by {width}, got {values.size}.")
     return values.reshape(-1, width)
+
+
+def _infer_mvnx_time_scale(raw_timestamps_ms: np.ndarray, frame_indices: np.ndarray, fps: float) -> float:
+    if raw_timestamps_ms.size < 2 or fps <= 0:
+        return 1.0
+    frame_deltas = np.diff(frame_indices.astype(np.float64))
+    time_deltas = np.diff(raw_timestamps_ms.astype(np.float64))
+    valid = (frame_deltas > 0) & (time_deltas > 0)
+    deltas = time_deltas[valid] / frame_deltas[valid]
+    if deltas.size == 0:
+        return 1.0
+    nominal_ms = 1000.0 / float(fps)
+    ratio = float(np.median(deltas) / nominal_ms)
+    return 0.1 if 8.0 <= ratio <= 12.0 else 1.0
 
 
 def load_mvnx_motion(
@@ -102,11 +118,29 @@ def load_mvnx_motion(
     if fps is None or segment_count is None:
         raise ValueError(f"No subject metadata found in {mvnx_path}.")
 
+    raw_timestamps_ms = np.asarray(timestamps_ms, dtype=np.int64)
+    frame_indices_array = np.asarray(frame_indices, dtype=np.int32)
+    if raw_timestamps_ms.size:
+        # Some Nymeria MVNX frame "ms" values are 10x larger than the shared
+        # timeline used by narration and VRS time code. Normalize that scale
+        # before rebuilding frame deltas from frame indices and frameRate.
+        time_scale = _infer_mvnx_time_scale(raw_timestamps_ms, frame_indices_array, float(fps))
+        corrected_timestamps_ms = np.rint(
+            float(raw_timestamps_ms[0]) * time_scale
+            + (frame_indices_array.astype(np.float64) - float(frame_indices_array[0])) * 1000.0 / float(fps)
+        ).astype(np.int64)
+        timestamp_source = "mvnx_frame_index_fps_scaled_0.1" if time_scale == 0.1 else "mvnx_frame_index_fps"
+    else:
+        corrected_timestamps_ms = raw_timestamps_ms
+        timestamp_source = "mvnx_frame_index_fps"
+
     return MvnxMotion(
         segment_quat_wxyz=np.asarray(quats, dtype=np.float32),
         segment_pos_xyz=np.asarray(positions, dtype=np.float32),
-        frame_indices=np.asarray(frame_indices, dtype=np.int32),
-        frame_timestamps=np.asarray(timestamps_ms, dtype=np.int64),
+        frame_indices=frame_indices_array,
+        frame_timestamps=corrected_timestamps_ms,
+        raw_frame_timestamps=raw_timestamps_ms,
+        timestamp_source=timestamp_source,
         fps=float(fps),
         segment_count=int(segment_count),
     )

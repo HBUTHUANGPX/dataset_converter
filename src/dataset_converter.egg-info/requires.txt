@@ -46,3 +46,7 @@ rtree==1.4.1
 [video]
 opencv-python
 projectaria-tools
+
+[viewer]
+opencv-python
+rerun-sdk

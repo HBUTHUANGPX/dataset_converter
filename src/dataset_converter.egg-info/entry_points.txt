@@ -1,3 +1,4 @@
 [console_scripts]
 dataset-converter-hdf5-batch = dataset_converter.hdf5.cli.batch_export:main
 dataset-converter-nymeria-batch = dataset_converter.nymeria.cli.batch_export:main
+dataset-converter-nymeria-viewer = dataset_converter.visualization.nymeria_rerun:main

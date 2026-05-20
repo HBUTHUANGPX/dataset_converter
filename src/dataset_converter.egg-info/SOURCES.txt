@@ -37,6 +37,8 @@ src/dataset_converter/soma/__init__.py
 src/dataset_converter/soma/bvh.py
 src/dataset_converter/soma/inversion.py
 src/dataset_converter/soma/transforms.py
+src/dataset_converter/visualization/__init__.py
+src/dataset_converter/visualization/nymeria_rerun.py
 src/soma/__init__.py
 src/soma/_compat.py
 src/soma/assets.py
@@ -61,3 +63,6 @@ src/soma/geometry/lbs_warp.py
 src/soma/geometry/rig_utils.py
 src/soma/geometry/skeleton_transfer.py
 src/soma/geometry/transforms.py
+tests/test_nymeria_mvnx.py
+tests/test_nymeria_rerun_viewer.py
+tests/test_soma_bvh.py

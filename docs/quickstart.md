@@ -153,7 +153,7 @@ Each sequence writes:
 └── timestamps.npz
 ```
 
-The timestamp sidecar stores original VRS capture timestamps and frame indices for each stream. Use it for precise alignment with MVNX/body frames.
+The timestamp sidecar stores VRS `TIME_CODE` timestamps and frame indices for each stream. Use `*_timestamps_ns` / `*_relative_timestamps_ns` for alignment with MVNX/body frames; original device/capture timestamps are kept separately as `*_capture_timestamps_ns`.
 
 The SLAM left/right streams are stereo grayscale cameras. If you need color video, export the RGB stream:
 

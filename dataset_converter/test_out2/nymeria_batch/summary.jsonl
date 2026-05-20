@@ -1,0 +1,3 @@
+{"stage": "annotation", "task_id": "20230607_s0_james_johnson_act0_e72nhq", "ok": true, "outputs": ["dataset_converter/test_out2/nymeria_batch/20230607_s0_james_johnson_act0_e72nhq/annotation.npz"], "error": ""}
+{"stage": "smpl", "task_id": "20230607_s0_james_johnson_act0_e72nhq", "ok": true, "outputs": ["dataset_converter/test_out2/nymeria_batch/20230607_s0_james_johnson_act0_e72nhq/smpl/nymeria_smpl.npz"], "error": ""}
+{"stage": "head-video", "task_id": "20230607_s0_james_johnson_act0_e72nhq", "ok": false, "outputs": [], "error": "FileNotFoundError('Missing head image VRS file: nymeria_dataset/test_download/20230607_s0_james_johnson_act0_e72nhq/recording_head/data/data.vrs. motion.vrs is present, but RGB/SLAM image streams are stored in data.vrs.')"}

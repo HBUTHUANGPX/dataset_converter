@@ -1,6 +1,6 @@
 # CLI Reference
 
-This page documents the two installed command line tools in `dataset_converter`.
+This page documents the installed command line tools in `dataset_converter`.
 
 Both commands are batch-oriented. They discover tasks under `--test-data-root`, write outputs under `--output-root`, and optionally write a JSONL summary with `--summary-path`.
 
@@ -28,6 +28,12 @@ uv pip install -e ".[video]"
 ```
 
 If `ffmpeg` is available on `PATH`, Nymeria MP4 export uses it automatically. Otherwise it falls back to OpenCV `mp4v`.
+
+Converted Nymeria visualization:
+
+```bash
+uv pip install -e ".[viewer]"
+```
 
 ## Shared Batch Behavior
 
@@ -214,6 +220,7 @@ Required input layout:
 ```
 
 `recording_head/data/data.vrs` is required only for `head-video`.
+`recording_head/data/motion.vrs` is not enough for video export: it contains motion sensor streams, while RGB/SLAM image streams live in `data.vrs`.
 
 Task id format:
 
@@ -242,9 +249,13 @@ Default output layout:
 
 Exports text/timeline metadata from MVNX timestamps and narration CSV files. `activity_summarization.csv` is saved as sub task text. `atomic_action.csv` is saved as current action text. Main task and interaction default to `UNKNOWN`.
 
+The output `annotation.npz` includes a corrected MVNX timeline (`frame_timestamps`, `frame_timestamps_ns`) rebuilt from MVNX frame indices and `frameRate`, plus `raw_frame_timestamps` for the original MVNX `ms` attributes. This keeps the first MVNX clock sample but fixes Nymeria files whose MVNX frame deltas are 10x too large. If this stage is exported together with `head-video --video-streams rgb`, it also includes `time_zero_ns`, `time_zero_source`, and `relative_frame_timestamps_ns`, where zero is the first RGB frame VRS `TIME_CODE` timestamp. Text segment start/end timestamps are also saved in absolute nanoseconds, with relative versions when `time_zero_ns` is available. Narration rows are anchored to the first exported MVNX/body frame while preserving their original segment durations and intervals.
+
 `smpl`
 
 Converts MVNX body motion to standard SMPL `.npz` fields.
+
+The output `smpl/nymeria_smpl.npz` includes SMPL pose fields plus corrected `timestamps_ns`, original `raw_timestamps_ns`, and `frame_indices`. If RGB time zero is available from the same batch command, it also includes `time_zero_ns`, `time_zero_source`, and `relative_timestamps_ns`.
 
 `soma-bvh`
 
@@ -253,6 +264,8 @@ Runs SMPL-to-SOMA conversion and writes a BVH file. Requires SOMA assets and a S
 `head-video`
 
 Reads `recording_head/data/data.vrs` and writes MP4 files plus `timestamps.npz`. Default streams are `slam-left` and `slam-right`; these are stereo grayscale streams. Use `--video-streams rgb` for the color camera.
+
+The timestamp sidecar stores each exported stream's VRS `TIME_CODE` timestamps in `*_timestamps_ns`, original device/capture timestamps in `*_capture_timestamps_ns` for diagnostics, frame indices, estimated FPS, `time_domain=time_code`, and `capture_time_domain=device_time`. When RGB is exported, `rgb_timestamps_ns[0]` becomes `time_zero_ns` and each stream receives `*_relative_timestamps_ns`.
 
 ### Nymeria Common Options
 
@@ -346,6 +359,21 @@ dataset-converter-nymeria-batch \
   --skip-existing
 ```
 
+Annotation, SMPL, and RGB video on a shared RGB-zero timeline:
+
+```bash
+dataset-converter-nymeria-batch \
+  --test-data-root dataset_converter/test_data/nymeria_test_data \
+  --output-root dataset_converter/test_out/nymeria_batch \
+  --exports annotation smpl head-video \
+  --video-streams rgb \
+  --workers 4 \
+  --skip-existing \
+  --summary-path dataset_converter/test_out/nymeria_batch/summary.jsonl
+```
+
+This is the recommended command when you want to inspect skeleton, text, and video together. The command resolves the first RGB VRS `TIME_CODE` timestamp first, then writes the same `time_zero_ns` into `annotation.npz`, `smpl/nymeria_smpl.npz`, and `head_video/timestamps.npz`.
+
 Short video preview:
 
 ```bash
@@ -380,3 +408,70 @@ Missing HDF5 `full_body_mocap` fields fail and are skipped because SMPL cannot b
 Missing HDF5 `caption` fails the `annotation` stage by design.
 
 Missing Nymeria narration rows leave affected frames as `UNKNOWN`; missing required MVNX/VRS files fail the relevant stage.
+
+For Nymeria `head-video`, a missing `recording_head/data/data.vrs` fails only the video stage. `annotation` and `smpl` can still be exported from `body_xdata_mvnx`, but they will not receive RGB-relative timestamps unless the RGB `data.vrs` is available in the same batch run.
+
+## `dataset-converter-nymeria-viewer`
+
+Visualizes one converted Nymeria sequence with Rerun. This tool is intentionally independent from the official Nymeria viewer source code. It reads only `dataset_converter` outputs:
+
+```text
+<sequence-output-dir>/
+├── annotation.npz
+├── smpl/
+│   └── nymeria_smpl.npz
+└── head_video/
+    ├── rgb.mp4
+    └── timestamps.npz
+```
+
+The Rerun timeline prefers the relative nanosecond timestamps written by the batch command: `annotation.npz/relative_frame_timestamps_ns` for SMPL/text and `head_video/timestamps.npz/rgb_relative_timestamps_ns` for video. If those fields are missing, it falls back to the older absolute timestamp fields. At each motion frame it logs SMPL joints/bones and the four text categories, so the Rerun time panel can scrub skeleton, text, and RGB video together around the RGB first-frame zero point.
+
+The viewer also logs a static `world/text/time_axis` document. It shows whether motion/text and RGB are using relative or absolute timestamps, the `time_domain`, and the `time_zero_source`.
+
+### Viewer Options
+
+`--sequence-dir PATH`
+
+Converted sequence directory containing `annotation.npz` and `smpl/nymeria_smpl.npz`.
+
+`--smpl-model-path PATH`
+
+Path to `SMPL_NEUTRAL.npz`. The viewer uses this model locally to compute SMPL joint positions from `global_orient`, `body_pose`, `transl`, and `betas`.
+
+`--output-rrd PATH`
+
+Write a Rerun `.rrd` recording to this path instead of spawning the interactive viewer.
+
+`--save-rrd`
+
+Shortcut for writing `<sequence-dir>/converted_nymeria.rrd`.
+
+`--stride N`
+
+Skeleton/text frame stride. Default: `1`.
+
+`--video-stride N`
+
+RGB video frame stride. Default: `1`.
+
+### Viewer Examples
+
+Interactive viewer:
+
+```bash
+dataset-converter-nymeria-viewer \
+  --sequence-dir nymeria_parse/out/batch/<sequence_id> \
+  --smpl-model-path "$SMPL_MODEL_PATH"
+```
+
+Save a smaller preview recording:
+
+```bash
+dataset-converter-nymeria-viewer \
+  --sequence-dir nymeria_parse/out/batch/<sequence_id> \
+  --smpl-model-path "$SMPL_MODEL_PATH" \
+  --output-rrd /tmp/nymeria_preview.rrd \
+  --stride 4 \
+  --video-stride 4
+```
